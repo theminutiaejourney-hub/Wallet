@@ -1,0 +1,6 @@
+{
+  "name": "AI Wallet App",
+  "description": "Multi-account financial tracker with smart Urdu/English AI transaction parsing, reports, and personalized saving plans by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
