@@ -307,6 +307,7 @@ export default function App() {
           message: textToSend,
           accounts: accounts,
           categories: CATEGORIES,
+          transactions: transactions,
           currentTime: new Date().toISOString()
         })
       });
@@ -420,6 +421,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
           message: budgetPrompt,
           accounts: accounts,
           categories: CATEGORIES,
+          transactions: transactions,
           currentTime: new Date().toISOString()
         })
       });
