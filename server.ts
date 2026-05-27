@@ -106,7 +106,7 @@ Guidelines for parsing transactions:
     const userPrompt = `User Message: "${message}"\n\nPlease respond according to the instructions in JSON format.`;
 
     const response = await client.models.generateContent({
-      model: "gemini-flash-latest",
+      model: "gemini-3.5-flash",
       contents: userPrompt,
       config: {
         systemInstruction,
@@ -130,10 +130,21 @@ Guidelines for parsing transactions:
 
     return res.json(replyObj);
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    return res.status(500).json({ 
-      error: "AI processing error", 
-      message: error.message || "Something went wrong"
+    console.error("Gemini API Error in server.ts:", error);
+    const errStr = String(error?.message || error).toLowerCase();
+    
+    // Check if it is a quota or rate limit error
+    const isQuotaExceeded = errStr.includes("quota") || errStr.includes("limit") || errStr.includes("429") || errStr.includes("resource_exhausted");
+    
+    let friendlyReply = "Maazrat, AI service main thora masla aya hai. Aap apny transactions ko neechay manual inputs k zariye add kar saktay hain.";
+    if (isQuotaExceeded) {
+       friendlyReply = "Aapka daily free AI quota mukammal ho gaya hai ya bohot zyada requests send ho chuki hain. Baraye meherbani thori der baad dobara koshish karein ya phir transactions ko niche manual input box se khud add karein.";
+    }
+    
+    return res.json({ 
+      responseText: friendlyReply, 
+      action: "none",
+      transaction: null
     });
   }
 });
