@@ -94,7 +94,7 @@ Guidelines for parsing transactions:
     const userPrompt = `User Message: "${message}"\n\nPlease respond according to the instructions in JSON format.`;
 
     const response = await client.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.1-flash-lite",
       contents: userPrompt,
       config: {
         systemInstruction,
