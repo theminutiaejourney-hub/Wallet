@@ -1,46 +1,36 @@
-import express from "express";
-import path from "path";
-import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
-import dotenv from "dotenv";
+import { GoogleGenAI } from "@google/genai";
 
-dotenv.config();
-
-const app = express();
-const PORT = 3000;
-
-// Initialize GoogleGenAI client lazily or safely
+// Cache client
 let ai: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!ai) {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn("WARNING: GEMINI_API_KEY environment variable is not set. AI Features will require a key.");
-    }
     ai = new GoogleGenAI({
-      apiKey: apiKey || "MOCK_KEY_FOR_BUILD",
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
+      apiKey: apiKey || ""
     });
   }
   return ai;
 }
 
-app.use(express.json());
+export default async function handler(req: any, res: any) {
+  // Set CORS headers for Vercel compatibility
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,PATCH,DELETE,POST,PUT");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+  );
 
-// API Endpoints FIRST
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
 
-// Health Check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
-});
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-// AI Assistant Chat endpoint
-app.post("/api/chat", async (req, res) => {
-  const { message, history, accounts, categories, currentTime } = req.body;
+  const { message, accounts, categories, currentTime } = req.body;
 
   if (!message) {
     return res.status(400).json({ error: "Message is required" });
@@ -50,7 +40,7 @@ app.post("/api/chat", async (req, res) => {
     const client = getGeminiClient();
     
     // Construct formatting and prompt context
-    const accountsDescription = accounts.map((acc: any) => 
+    const accountsDescription = (accounts || []).map((acc: any) => 
       `- ID: "${acc.id}", Name: "${acc.name}", Type: "${acc.type}", Balance: Rs. ${acc.balance}`
     ).join("\n");
 
@@ -65,7 +55,7 @@ The user's active Bank/Cash accounts are:
 ${accountsDescription}
 
 The available spending/income categories are:
-${categories.join(", ")}
+${(categories || []).join(", ")}
 
 You MUST output your response strictly as a single JSON object. Do not include markdown codeblocks or other formatting headers.
 The JSON structure must match this:
@@ -88,8 +78,6 @@ Guidelines for parsing transactions:
 - Ensure the amount is a clear parsing of numbers.
 - If it is not a transaction (e.g. asking for an investment plan), set action to "none" and transaction to null. In responseText, provide a comprehensive, detailed saving and visual budget plan with steps (e.g. 50/30/20 rule, target to save Rs. X, UBL savings accounts, Meezan Halal mutual funds, etc.) adapted directly to the user's balances.`;
 
-    // Process chat history to conform to Gemini's expectations if we can or just use contents directly
-    // Let's pass the prompt to generateContent
     const userPrompt = `User Message: "${message}"\n\nPlease respond according to the instructions in JSON format.`;
 
     const response = await client.models.generateContent({
@@ -107,7 +95,6 @@ Guidelines for parsing transactions:
       replyObj = JSON.parse(replyRaw.trim());
     } catch (parseError) {
       console.error("Failed to parse AI JSON response, raw text was:", replyRaw);
-      // Fallback
       replyObj = {
         responseText: replyRaw,
         action: "none",
@@ -115,7 +102,7 @@ Guidelines for parsing transactions:
       };
     }
 
-    return res.json(replyObj);
+    return res.status(200).json(replyObj);
   } catch (error: any) {
     console.error("Gemini API Error:", error);
     return res.status(500).json({ 
@@ -123,33 +110,4 @@ Guidelines for parsing transactions:
       message: error.message || "Something went wrong"
     });
   }
-});
-
-// Vite Middleware/Asset serving
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-    console.log("Vite development server middleware loaded.");
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-    console.log(`Serving static files from ${distPath}`);
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Express Wallet Server running on http://localhost:${PORT}`);
-  });
 }
-
-if (process.env.VERCEL !== "1") {
-  startServer();
-}
-
-export default app;
