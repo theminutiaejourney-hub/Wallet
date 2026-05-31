@@ -805,29 +805,29 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                           onClick={() => setSelectedAccountId(isSelected ? null : acc.id)}
                           className={`p-4 rounded-xl border transition-all cursor-pointer ${
                             isSelected 
-                              ? "bg-stone-900 text-white border-stone-900 shadow-sm"
-                              : "bg-white hover:bg-stone-50 border-stone-200"
+                              ? "bg-stone-900 dark:bg-zinc-800 text-white dark:text-zinc-100 border-stone-900 dark:border-zinc-700 shadow-sm"
+                              : "bg-white dark:bg-[#151926] hover:bg-stone-55 dark:hover:bg-[#1e2538]/60 text-stone-900 dark:text-stone-100 border-stone-200 dark:border-[#21283b]"
                           }`}
                         >
                           <div className="flex justify-between items-start">
                             <div className="flex items-center gap-2.5">
                               <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
                                 acc.type === "Bank" 
-                                  ? "bg-blue-100 text-blue-800" 
+                                  ? "bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300" 
                                   : acc.type === "Outside of Wallet"
-                                    ? "bg-purple-100 text-purple-800 font-mono"
-                                    : "bg-emerald-100 text-emerald-800"
+                                    ? "bg-purple-100 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 font-mono"
+                                    : "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300"
                               }`}>
                                 {acc.name.substring(0,2).toUpperCase()}
                               </div>
                               <div>
-                                <p className="text-xs font-bold leading-none">{acc.name}</p>
-                                <span className={`text-[9px] ${isSelected ? "text-stone-400" : "text-stone-500"}`}>{acc.accountNumber || "Personal Cash"}</span>
+                                <p className={`text-xs font-bold leading-none ${isSelected ? "text-white" : "text-stone-900 dark:text-stone-100"}`}>{acc.name}</p>
+                                <span className={`text-[9px] ${isSelected ? "text-stone-300" : "text-stone-500 dark:text-stone-400"}`}>{acc.accountNumber || "Personal Cash"}</span>
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-xs font-extrabold font-mono">{formatPKR(acc.balance)}</p>
-                              <span className="text-[8px] uppercase font-bold text-stone-400">{acc.type}</span>
+                              <p className={`text-xs font-extrabold font-mono ${isSelected ? "text-white" : "text-stone-900 dark:text-stone-100"}`}>{formatPKR(acc.balance)}</p>
+                              <span className={`text-[8px] uppercase font-bold ${isSelected ? "text-stone-300" : "text-stone-400 dark:text-stone-500"}`}>{acc.type}</span>
                             </div>
                           </div>
                         </div>
@@ -988,16 +988,16 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
             {/* tab 2: ACCOUNTS */}
             {activeTab === "accounts" && (
               <div className="space-y-6">
-                <div className="bg-white p-6 rounded-2xl border border-stone-200">
+                <div className="bg-white dark:bg-[#151926] p-6 rounded-2xl border border-stone-200 dark:border-[#21283b] transition-all">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <h3 className="font-display font-bold text-stone-900 text-base">Your Bank Core</h3>
-                      <p className="text-xs text-stone-500">Manage starting limits and credentials</p>
+                      <h3 className="font-display font-bold text-stone-900 dark:text-white text-base">Your Bank Core</h3>
+                      <p className="text-xs text-stone-500 dark:text-stone-400">Manage starting limits and credentials</p>
                     </div>
                     <button
                       id="btn-add-acc-page"
                       onClick={() => setIsAddAccOpen(true)}
-                      className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold shadow-xs"
+                      className="px-4 py-2 bg-stone-900 hover:bg-stone-850 dark:bg-emerald-600 dark:hover:bg-emerald-750 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
                     >
                       + Add New Bank / Wallet
                     </button>
@@ -1007,38 +1007,38 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                     {accounts.map(acc => {
                       const isEditing = editingAccId === acc.id;
                       return (
-                        <div key={acc.id} className="p-5 bg-[#F9FAFB] rounded-2xl border border-stone-200 relative flex flex-col justify-between">
+                        <div key={acc.id} className="p-5 bg-[#F9FAFB] dark:bg-[#1a2030]/60 rounded-2xl border border-stone-200 dark:border-[#2c354e] relative flex flex-col justify-between transition-all">
                           {isEditing ? (
                             <div className="space-y-3">
-                              <span className="text-[10px] text-blue-600 uppercase font-mono font-bold block mb-1">Edit Account Details</span>
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-mono font-bold block mb-1">Edit Account Details</span>
                               
                               <div>
-                                <label className="block text-[9px] font-bold text-stone-500 uppercase">Account Name</label>
+                                <label className="block text-[9px] font-bold text-stone-505 dark:text-stone-400 uppercase">Account Name</label>
                                 <input
                                   type="text"
                                   value={editAccName}
                                   onChange={(e) => setEditAccName(e.target.value)}
-                                  className="w-full text-xs font-semibold p-1.5 border border-stone-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                                  className="w-full text-xs font-semibold p-1.5 border border-stone-200 dark:border-[#2c354e] bg-white dark:bg-[#151926] text-stone-900 dark:text-white rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
                                 />
                               </div>
 
                               <div>
-                                <label className="block text-[9px] font-bold text-stone-500 uppercase">Account Number / Memo</label>
+                                <label className="block text-[9px] font-bold text-stone-505 dark:text-stone-400 uppercase">Account Number / Memo</label>
                                 <input
                                   type="text"
                                   value={editAccNumber}
                                   onChange={(e) => setEditAccNumber(e.target.value)}
-                                  className="w-full text-xs font-mono p-1.5 border border-stone-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                                  className="w-full text-xs font-mono p-1.5 border border-stone-200 dark:border-[#2c354e] bg-white dark:bg-[#151926] text-stone-900 dark:text-white rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
                                 />
                               </div>
 
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                  <label className="block text-[9px] font-bold text-stone-500 uppercase">Account Type</label>
+                                  <label className="block text-[9px] font-bold text-stone-505 dark:text-stone-400 uppercase">Account Type</label>
                                   <select
                                     value={editAccType}
                                     onChange={(e) => setEditAccType(e.target.value)}
-                                    className="w-full text-xs font-semibold p-1.5 bg-white border border-stone-200 rounded"
+                                    className="w-full text-xs font-semibold p-1.5 bg-white dark:bg-[#151926] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded"
                                   >
                                     <option value="Bank">Bank</option>
                                     <option value="Wallet">Wallet</option>
@@ -1047,12 +1047,12 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                   </select>
                                 </div>
                                 <div>
-                                  <label className="block text-[9px] font-bold text-stone-500 uppercase">Balance (PKR)</label>
+                                  <label className="block text-[9px] font-bold text-stone-505 dark:text-stone-400 uppercase">Balance (PKR)</label>
                                   <input
                                     type="number"
                                     value={editAccBalance}
                                     onChange={(e) => setEditAccBalance(e.target.value)}
-                                    className="w-full text-xs font-bold font-mono p-1.5 border border-stone-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
+                                    className="w-full text-xs font-bold font-mono p-1.5 border border-stone-200 dark:border-[#2c354e] bg-white dark:bg-[#151926] text-stone-900 dark:text-white rounded focus:ring-1 focus:ring-blue-600 focus:outline-hidden"
                                   />
                                 </div>
                               </div>
@@ -1060,13 +1060,13 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                               <div className="flex gap-1.5 pt-2">
                                 <button
                                   onClick={() => handleSaveAccountEdit(acc.id)}
-                                  className="flex-1 py-1.5 bg-stone-900 hover:bg-stone-850 text-white rounded text-xs font-bold transition-all"
+                                  className="flex-1 py-1.5 bg-stone-900 dark:bg-zinc-800 hover:bg-stone-850 dark:hover:bg-zinc-700 text-white rounded text-xs font-bold transition-all"
                                 >
                                   Save
                                 </button>
                                 <button
                                   onClick={() => setEditingAccId(null)}
-                                  className="py-1.5 px-3 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded text-xs transition-all"
+                                  className="py-1.5 px-3 bg-stone-100 dark:bg-[#252f4a] hover:bg-stone-200 dark:hover:bg-[#2e374f] text-stone-600 dark:text-stone-300 rounded text-xs transition-all"
                                 >
                                   Cancel
                                 </button>
@@ -1077,28 +1077,28 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                               <div>
                                 <div className="flex justify-between items-start">
                                   <div>
-                                    <span className="text-[9px] text-stone-400 uppercase font-mono font-bold block mb-1">Account reference</span>
-                                    <h4 className="text-sm font-bold text-stone-900 leading-tight">{acc.name}</h4>
-                                    <p className="text-[10px] text-stone-500 font-mono mt-0.5">{acc.accountNumber}</p>
+                                    <span className="text-[9px] text-stone-400 dark:text-stone-500 uppercase font-mono font-bold block mb-1">Account reference</span>
+                                    <h4 className="text-sm font-bold text-stone-900 dark:text-white leading-tight">{acc.name}</h4>
+                                    <p className="text-[10px] text-stone-500 dark:text-stone-400 font-mono mt-0.5">{acc.accountNumber || "Personal Assets"}</p>
                                   </div>
                                   <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
                                     acc.type === "Bank" 
-                                      ? "bg-blue-100 text-blue-800" 
+                                      ? "bg-blue-105 dark:bg-blue-950/50 text-blue-805 dark:text-blue-300" 
                                       : acc.type === "Outside of Wallet"
-                                        ? "bg-purple-100 text-purple-800"
-                                        : "bg-emerald-100 text-emerald-800"
+                                        ? "bg-purple-105 dark:bg-purple-950/50 text-purple-805 dark:text-purple-300"
+                                        : "bg-emerald-105 dark:bg-emerald-950/50 text-emerald-855 dark:text-emerald-300"
                                   }`}>
                                     {acc.type}
                                   </span>
                                 </div>
 
                                 <div className="my-4">
-                                  <span className="text-[10px] text-stone-400 uppercase font-bold tracking-wider block">Current Balance</span>
-                                  <p className="text-xl font-extrabold text-stone-950 font-mono leading-none mt-1">{formatPKR(acc.balance)}</p>
+                                  <span className="text-[10px] text-stone-400 dark:text-stone-500 uppercase font-bold tracking-wider block">Current Balance</span>
+                                  <p className="text-xl font-extrabold text-stone-950 dark:text-emerald-400 font-mono leading-none mt-1">{formatPKR(acc.balance)}</p>
                                 </div>
                               </div>
 
-                              <div className="flex items-center justify-between border-t border-stone-200 pt-2.5 mt-2">
+                              <div className="flex items-center justify-between border-t border-stone-200 dark:border-[#21283b] pt-2.5 mt-2">
                                 <button
                                   onClick={() => {
                                     setEditingAccId(acc.id);
@@ -1107,14 +1107,14 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                     setEditAccNumber(acc.accountNumber || "");
                                     setEditAccType(acc.type);
                                   }}
-                                  className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 hover:underline align-middle"
+                                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold flex items-center gap-1 hover:underline align-middle"
                                 >
                                   Edit Details
                                 </button>
                                 {accounts.length > 1 && (
                                   <button
                                     onClick={() => handleDeleteAccount(acc.id)}
-                                    className="text-xs text-red-500 hover:text-red-700 font-semibold p-1 hover:bg-red-50 rounded"
+                                    className="text-xs text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-semibold p-1 hover:bg-red-50 dark:hover:bg-red-950/20 rounded"
                                     title="Delete this account"
                                   >
                                     Delete
@@ -1133,18 +1133,18 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
 
             {/* tab 3: TRANSACTIONS RECORD */}
             {activeTab === "transactions" && (
-              <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs">
+              <div className="bg-white dark:bg-[#151926] p-6 rounded-2xl border border-stone-200 dark:border-[#21283b] shadow-xs transition-all">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                   <div>
-                    <h3 className="font-display font-bold text-stone-900 text-base">Ledger Statement Book</h3>
-                    <p className="text-xs text-stone-500">Full audit statement logs</p>
+                    <h3 className="font-display font-bold text-stone-900 dark:text-white text-base">Ledger Statement Book</h3>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">Full audit statement logs</p>
                   </div>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-stone-600 border-collapse">
+                  <table className="w-full text-left text-xs text-stone-600 dark:text-stone-300 border-collapse">
                     <thead>
-                      <tr className="border-b border-stone-200 text-[#1A1A1B] uppercase font-bold tracking-wider bg-stone-50 text-[10px]">
+                      <tr className="border-b border-stone-200 dark:border-[#2c354e] text-[#1A1A1B] dark:text-gray-200 uppercase font-bold tracking-wider bg-stone-50 dark:bg-[#1a2030] text-[10px]">
                         <th className="py-3 px-4">Date</th>
                         <th className="py-3 px-4">Description</th>
                         <th className="py-3 px-4">Category</th>
@@ -1154,10 +1154,10 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                         <th className="py-3 px-4 text-center">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-stone-100">
+                    <tbody className="divide-y divide-stone-100 dark:divide-[#21283b]">
                       {filteredTxs.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="text-center py-10 text-stone-400">
+                          <td colSpan={7} className="text-center py-10 text-stone-400 dark:text-stone-500">
                             No ledger journal elements exist for current constraints.
                           </td>
                         </tr>
@@ -1166,21 +1166,21 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                           const originAcc = accounts.find(a => a.id === t.accountId);
                           const targetAcc = t.toAccountId ? accounts.find(a => a.id === t.toAccountId) : null;
                           return (
-                            <tr key={t.id} className="hover:bg-stone-50 transition-colors">
-                              <td className="py-3 px-4 font-mono text-stone-500">{t.date}</td>
-                              <td className="py-3 px-4 font-bold text-stone-800">{t.description}</td>
+                            <tr key={t.id} className="hover:bg-stone-50 dark:hover:bg-[#1a2030]/50 transition-colors">
+                              <td className="py-3 px-4 font-mono text-stone-500 dark:text-stone-400">{t.date}</td>
+                              <td className="py-3 px-4 font-bold text-stone-800 dark:text-stone-200">{t.description}</td>
                               <td className="py-3 px-4">
-                                <span className="bg-stone-100 text-stone-800 px-2 py-0.5 rounded-full font-semibold font-mono text-[10px]">
+                                <span className="bg-stone-100 dark:bg-[#1e2538] text-stone-800 dark:text-stone-200 px-2 py-0.5 rounded-full font-semibold font-mono text-[10px]">
                                   {t.category}
                                 </span>
                               </td>
                               <td className="py-3 px-4">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-semibold text-stone-800">{originAcc?.name || "Unknown"}</span>
+                                  <span className="font-semibold text-stone-800 dark:text-emerald-400">{originAcc?.name || "Unknown"}</span>
                                   {targetAcc && (
                                     <>
-                                      <span className="text-stone-400">→</span>
-                                      <span className="font-semibold text-blue-600">{targetAcc.name}</span>
+                                      <span className="text-stone-400 dark:text-stone-500">→</span>
+                                      <span className="font-semibold text-blue-600 dark:text-blue-400">{targetAcc.name}</span>
                                     </>
                                   )}
                                 </div>
@@ -1188,16 +1188,16 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                               <td className="py-3 px-4">
                                 <span className={`uppercase text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
                                   t.type === "income" 
-                                    ? "bg-emerald-100 text-emerald-800" 
+                                    ? "bg-emerald-100 dark:bg-emerald-950/45 text-emerald-800 dark:text-emerald-300" 
                                     : t.type === "expense" 
-                                      ? "bg-red-100 text-red-800"
-                                      : "bg-amber-100 text-amber-800"
+                                      ? "bg-red-100 dark:bg-red-950/45 text-red-800 dark:text-red-300"
+                                      : "bg-amber-100 dark:bg-amber-950/45 text-amber-800 dark:text-amber-300"
                                 }`}>
                                   {t.type}
                                 </span>
                               </td>
                               <td className={`py-3 px-4 text-right font-bold font-mono ${
-                                t.type === "income" ? "text-emerald-700" : t.type === "expense" ? "text-red-700" : "text-amber-700"
+                                t.type === "income" ? "text-emerald-700 dark:text-emerald-400" : t.type === "expense" ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"
                               }`}>
                                 {t.type === "income" ? "+" : "-"} {formatPKR(t.amount)}
                               </td>
@@ -1205,7 +1205,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                 <button
                                   id={`btn-del-${t.id}`}
                                   onClick={() => handleDeleteTransaction(t.id)}
-                                  className="p-1 rounded-sm text-stone-400 hover:text-red-600 hover:bg-stone-200 transition-colors"
+                                  className="p-1 rounded-sm text-stone-400 hover:text-red-650 hover:bg-stone-200 dark:hover:bg-[#1a2030] transition-colors"
                                   title="Delete record"
                                 >
                                   <Trash2 className="w-4 h-4" />
