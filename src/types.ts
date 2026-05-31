@@ -34,3 +34,14 @@ export interface CategoryBudget {
   limit: number;
   spent: number;
 }
+
+export interface Debt {
+  id: string;
+  person: string;
+  amount: number;
+  type: "receive" | "pay"; // receive (lainey hain), pay (dainey hain)
+  date: string;
+  notes: string;
+  status: "pending" | "settled";
+}
+

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Account, Transaction, ChatMessage } from "./types";
+import { Account, Transaction, ChatMessage, Debt } from "./types";
 import { INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, CATEGORIES, formatPKR, getCategoryColor } from "./data";
 import { 
   Plus, 
@@ -21,7 +21,11 @@ import {
   TrendingUp, 
   Lightbulb, 
   Mic, 
-  Send 
+  Send,
+  Sun,
+  Moon,
+  Users,
+  Check
 } from "lucide-react";
 
 export default function App() {
@@ -37,8 +41,46 @@ export default function App() {
   });
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "accounts" | "transactions" | "ai">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "accounts" | "transactions" | "ai" | "debts">("overview");
   const [timeFilter, setTimeFilter] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
+  
+  // Debts and Dark Mode states
+  const [debts, setDebts] = useState<Debt[]>(() => {
+    const saved = localStorage.getItem("wall_debts");
+    return saved ? JSON.parse(saved) : [
+      {
+        id: "debt-1",
+        person: "Ahmad Zafar",
+        amount: 5000,
+        type: "receive",
+        date: "2026-05-25",
+        notes: "Biryani and catering contribution",
+        status: "pending"
+      },
+      {
+        id: "debt-2",
+        person: "Umar Farooq",
+        amount: 1500,
+        type: "pay",
+        date: "2026-05-26",
+        notes: "Fuel and bike expenses share",
+        status: "pending"
+      }
+    ];
+  });
+
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem("wallet_dark_mode") === "true";
+  });
+
+  const [isAddDebtOpen, setIsAddDebtOpen] = useState(false);
+  const [debtPerson, setDebtPerson] = useState("");
+  const [debtAmount, setDebtAmount] = useState("");
+  const [debtType, setDebtType] = useState<"receive" | "pay">("receive");
+  const [debtNotes, setDebtNotes] = useState("");
+  const [debtDate, setDebtDate] = useState(new Date().toISOString().split("T")[0]);
+  const [debtQuery, setDebtQuery] = useState(""); // filter debts by name
+
   
   // chat state
   const [chatInput, setChatInput] = useState("");
@@ -60,7 +102,7 @@ export default function App() {
   const [isAddTxOpen, setIsAddTxOpen] = useState(false);
   const [txType, setTxType] = useState<"income" | "expense" | "transfer">("expense");
   const [txAmount, setTxAmount] = useState("");
-  const [txCategory, setTxCategory] = useState("Food & Dining");
+  const [txCategory, setTxCategory] = useState("Foods & Drink Expenses");
   const [txDescription, setTxDescription] = useState("");
   const [txAccountId, setTxAccountId] = useState(accounts[0]?.id || "");
   const [txToAccountId, setTxToAccountId] = useState("");
@@ -94,6 +136,19 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("wall_transactions", JSON.stringify(transactions));
   }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem("wall_debts", JSON.stringify(debts));
+  }, [debts]);
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+    localStorage.setItem("wallet_dark_mode", String(darkMode));
+  }, [darkMode]);
 
   // Auto scroll chat
   useEffect(() => {
@@ -308,6 +363,7 @@ export default function App() {
           accounts: accounts,
           categories: CATEGORIES,
           transactions: transactions,
+          debts: debts,
           currentTime: new Date().toISOString()
         })
       });
@@ -368,13 +424,38 @@ export default function App() {
             toAccountId: toSelectedId,
             type: parsed.type,
             amount: amt,
-            category: parsed.category || "Other",
+            category: parsed.category || "Foods & Drink Expenses",
             description: parsed.description || "AI processed transaction",
             date: new Date().toISOString().split("T")[0]
           };
 
           setAccounts(updated);
           setTransactions(prev => [newParsedTx, ...prev]);
+        }
+      } else if (data.action === "add_debt" && data.debt) {
+        const d = data.debt;
+        const amt = parseFloat(d.amount);
+        if (amt > 0) {
+          const newDebt: Debt = {
+            id: `ai-debt-${Date.now()}`,
+            person: d.person || "Unknown",
+            amount: amt,
+            type: d.type === "pay" ? "pay" : "receive",
+            date: d.date || new Date().toISOString().split("T")[0],
+            notes: d.notes || "AI added debt record",
+            status: "pending"
+          };
+          setDebts(prev => [newDebt, ...prev]);
+        }
+      } else if (data.action === "settle_debt" && data.settleDebt) {
+        const s = data.settleDebt;
+        if (s.person) {
+          setDebts(prev => prev.map(db => {
+            if (db.person.toLowerCase().includes(s.person.toLowerCase()) && db.status === "pending") {
+              return { ...db, status: "settled" as const };
+            }
+            return db;
+          }));
         }
       }
 
@@ -422,6 +503,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
           accounts: accounts,
           categories: CATEGORIES,
           transactions: transactions,
+          debts: debts,
           currentTime: new Date().toISOString()
         })
       });
@@ -455,10 +537,10 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1B] flex flex-col font-sans transition-all duration-300">
+    <div className={`min-h-screen bg-[#F8F9FA] dark:bg-[#0f111a] text-[#1A1A1B] dark:text-[#f3f4f6] flex flex-col font-sans transition-all duration-300 ${darkMode ? "dark" : ""}`}>
       
       {/* Top Banner Status Bar - Pure, humble title */}
-      <div className="bg-stone-900 text-stone-300 text-xs px-6 py-2 flex items-center justify-between font-mono tracking-tight z-10 border-b border-stone-800">
+      <div className="bg-stone-900 border-b border-stone-800 text-stone-300 text-xs px-6 py-2 flex items-center justify-between font-mono tracking-tight z-10 transition-colors">
         <div className="flex items-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span>AIS SERVER SECURE STATUS: ONLINE</span>
@@ -472,15 +554,15 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
       <div className="flex-1 flex flex-col md:flex-row h-[calc(100vh-32px)] overflow-hidden">
         
         {/* Left Sidebar Navigation */}
-        <aside id="sidebar" className="w-full md:w-64 bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">
+        <aside id="sidebar" className="w-full md:w-64 bg-white dark:bg-[#151926] border-r border-[#E5E7EB] dark:border-[#21283b] flex flex-col shrink-0 transition-colors">
           <div className="p-6">
             <div className="flex items-center gap-2.5 mb-8">
               <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm">
                 W
               </div>
               <div>
-                <h1 className="text-lg font-bold tracking-tight font-display text-stone-900 leading-tight">AI Wallet app</h1>
-                <p className="text-[10px] text-stone-400 font-medium">PKR Multi-Bank Ledger</p>
+                <h1 className="text-lg font-bold tracking-tight font-display text-stone-900 dark:text-white leading-tight">AI Wallet app</h1>
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 font-medium">PKR Multi-Bank Ledger</p>
               </div>
             </div>
 
@@ -490,8 +572,8 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 onClick={() => setActiveTab("overview")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
                   activeTab === "overview"
-                    ? "bg-blue-50 text-blue-600 shadow-xs"
-                    : "text-stone-600 hover:bg-stone-50"
+                    ? "bg-blue-50 dark:bg-[#1e2538] text-blue-600 dark:text-blue-400 shadow-xs font-bold"
+                    : "text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#1e2538]/60"
                 }`}
               >
                 <Wallet className="w-4 h-4" />
@@ -503,13 +585,13 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 onClick={() => setActiveTab("accounts")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
                   activeTab === "accounts"
-                    ? "bg-blue-50 text-blue-600 shadow-xs"
-                    : "text-stone-600 hover:bg-stone-50"
+                    ? "bg-blue-50 dark:bg-[#1e2538] text-blue-600 dark:text-blue-400 shadow-xs font-bold"
+                    : "text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#1e2538]/60"
                 }`}
               >
                 <MessageSquare className="w-4 h-4" />
                 <span>All Banks & Wallets</span>
-                <span className="ml-auto bg-stone-100 text-stone-600 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                <span className="ml-auto bg-stone-100 dark:bg-[#1e2538] text-stone-600 dark:text-stone-300 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
                   {accounts.length}
                 </span>
               </button>
@@ -519,14 +601,30 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 onClick={() => setActiveTab("transactions")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
                   activeTab === "transactions"
-                    ? "bg-blue-50 text-blue-600 shadow-xs"
-                    : "text-stone-600 hover:bg-stone-50"
+                    ? "bg-blue-50 dark:bg-[#1e2538] text-blue-600 dark:text-blue-400 shadow-xs font-bold"
+                    : "text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#1e2538]/60"
                 }`}
               >
                 <Calendar className="w-4 h-4" />
                 <span>Transactions Core</span>
-                <span className="ml-auto bg-stone-100 text-stone-600 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                <span className="ml-auto bg-stone-100 dark:bg-[#1e2538] text-stone-600 dark:text-stone-300 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
                   {transactions.length}
+                </span>
+              </button>
+
+              <button
+                id="btn-tab-debts"
+                onClick={() => setActiveTab("debts")}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
+                  activeTab === "debts"
+                    ? "bg-purple-50 dark:bg-purple-950/45 text-purple-700 dark:text-purple-400 shadow-xs font-bold"
+                    : "text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#1e2538]/60"
+                }`}
+              >
+                <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Lene-Dene (Udhaar Ledger)</span>
+                <span className="ml-auto bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                  {debts.filter(d => d.status === "pending").length}
                 </span>
               </button>
 
@@ -535,24 +633,24 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 onClick={() => setActiveTab("ai")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
                   activeTab === "ai"
-                    ? "bg-emerald-50 text-emerald-700 shadow-xs"
-                    : "text-stone-600 hover:bg-stone-50"
+                    ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#1e2538]/60"
                 }`}
               >
-                <Sparkles className="w-4 h-4 text-emerald-600 animate-bounce" />
+                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Gemini Savings Expert</span>
-                <span className="ml-auto bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                <span className="ml-auto bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">
                   Active
                 </span>
               </button>
             </nav>
           </div>
 
-          <div className="mt-auto p-4 border-t border-[#E5E7EB]">
+          <div className="mt-auto p-4 border-t border-[#E5E7EB] dark:border-[#21283b]">
             <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-4 rounded-xl relative overflow-hidden shadow-xs">
               <div className="absolute right-[-20px] bottom-[-20px] w-20 h-20 bg-white/10 rounded-full"></div>
               <p className="text-[10px] uppercase tracking-widest font-extrabold opacity-75 mb-1.5">AI Smart Advisor</p>
-              <p className="text-xs leading-relaxed font-normal mb-3">
+              <p className="text-xs leading-relaxed font-normal mb-3 text-blue-50">
                 Do you want to plan your future savings or Hajj plans based on your income streams?
               </p>
               <button 
@@ -567,28 +665,39 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
         </aside>
 
         {/* Main Content Pane */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-[#F8F9FA] dark:bg-[#0f111a]">
           
           {/* Main Top Header bar */}
-          <header className="h-16 bg-white border-b border-[#E5E7EB] px-8 flex items-center justify-between shrink-0">
+          <header className="h-16 bg-white dark:bg-[#151926] border-b border-[#E5E7EB] dark:border-[#21283b] px-8 flex items-center justify-between shrink-0 transition-colors">
             <div>
-              <h2 className="font-display font-bold text-stone-800 text-base flex items-center gap-2 uppercase tracking-wide">
+              <h2 className="font-display font-medium text-stone-800 dark:text-stone-100 text-sm sm:text-base flex items-center gap-2 uppercase tracking-wide">
                 <span>{activeTab === "overview" && "Dashboard Overview"}</span>
                 <span>{activeTab === "accounts" && "Linked Accounts & Banks"}</span>
                 <span>{activeTab === "transactions" && "Financial Ledger records"}</span>
                 <span>{activeTab === "ai" && "Gemini Savings AI Advisor"}</span>
+                <span>{activeTab === "debts" && "Lene-Dene (Udhaar Ledger)"}</span>
               </h2>
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs text-stone-400 font-mono font-medium">
+              {/* Dark Mode toggle button button */}
+              <button
+                id="btn-dark-mode"
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 rounded-xl bg-stone-100 dark:bg-[#1e2538] text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-[#252f4a] transition-all"
+                title="Toggle Theme"
+              >
+                {darkMode ? <Sun className="w-4 h-4 text-amber-500 animate-spin-once" /> : <Moon className="w-4 h-4 text-slate-700" />}
+              </button>
+
+              <span className="text-xs text-stone-400 dark:text-stone-500 font-mono font-medium hidden sm:inline">
                 {new Date().toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
               </span>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
               <img 
                 src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" 
                 alt="Account Holder Avatar" 
-                className="w-8 h-8 rounded-full border border-stone-200"
+                className="w-8 h-8 rounded-full border border-stone-200 dark:border-stone-800"
               />
             </div>
           </header>
@@ -597,47 +706,47 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
             
             {/* 4 Multi-Account Stats Metrics Box */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl border border-[#E5E7EB] shadow-xs relative transition-all hover:border-stone-300">
-                <p className="text-[10px] text-stone-400 mb-1 font-bold uppercase tracking-wider font-mono">Net Assets / Total Balance</p>
-                <p className="text-2xl font-bold font-display text-stone-900 tracking-tight">{formatPKR(totalBalance)}</p>
-                <div className="text-[10px] text-stone-500 mt-2 flex items-center gap-1">
+              <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Assets / Total Balance</p>
+                <p className="text-2xl font-bold font-display text-stone-900 dark:text-white tracking-tight">{formatPKR(totalBalance)}</p>
+                <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
                   <span>Calculated across {accounts.length} account types</span>
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-2xl border border-[#E5E7EB] shadow-xs relative transition-all hover:border-stone-300">
-                <p className="text-[10px] text-stone-400 mb-1 font-bold uppercase tracking-wider font-mono">Income this Period ({timeFilter})</p>
-                <p className="text-2xl font-bold font-display text-blue-600 tracking-tight">{formatPKR(totalIncome)}</p>
-                <div className="text-[10px] text-emerald-600 mt-2 font-semibold font-mono">
+              <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Income this Period ({timeFilter})</p>
+                <p className="text-2xl font-bold font-display text-blue-600 dark:text-blue-400 tracking-tight">{formatPKR(totalIncome)}</p>
+                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-2 font-semibold font-mono">
                   Active earnings
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-2xl border border-[#E5E7EB] shadow-xs relative transition-all hover:border-stone-300">
-                <p className="text-[10px] text-stone-400 mb-1 font-bold uppercase tracking-wider font-mono">Total Expense ({timeFilter})</p>
-                <p className="text-2xl font-bold font-display text-red-500 tracking-tight">{formatPKR(totalExpense)}</p>
-                <div className="text-[10px] text-stone-500 mt-2 font-mono">
+              <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Total Expense ({timeFilter})</p>
+                <p className="text-2xl font-bold font-display text-red-500 dark:text-red-400 tracking-tight">{formatPKR(totalExpense)}</p>
+                <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2 font-mono">
                   {totalIncome > 0 ? `${Math.round((totalExpense / totalIncome) * 100)}% of income used` : "No income recorded"}
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-2xl border border-[#E5E7EB] shadow-xs relative transition-all hover:border-stone-300">
-                <p className="text-[10px] text-stone-400 mb-1 font-bold uppercase tracking-wider font-mono">Net Period Savings</p>
-                <p className={`text-2xl font-bold font-display tracking-tight ${netSavings >= 0 ? "text-emerald-700" : "text-yellow-600"}`}>
+              <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Period Savings</p>
+                <p className={`text-2xl font-bold font-display tracking-tight ${netSavings >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-yellow-600 dark:text-yellow-500"}`}>
                   {formatPKR(netSavings)}
                 </p>
-                <div className="text-[10px] text-stone-500 mt-2">
+                <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
                   Target threshold active
                 </div>
               </div>
             </div>
 
             {/* Interval Filtering Selector tabs */}
-            <div className="bg-white p-3 rounded-xl border border-[#E5E7EB] flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="bg-white dark:bg-[#151926] p-3 rounded-xl border border-[#E5E7EB] dark:border-[#21283b] flex flex-wrap items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-stone-500 font-medium">Record Duration Filter:</span>
-                <div className="flex bg-stone-100 p-1 rounded-lg">
+                <span className="text-xs text-stone-500 dark:text-stone-450 font-medium font-display">Record Duration Filter:</span>
+                <div className="flex bg-stone-100 dark:bg-[#1a2030] p-1 rounded-lg">
                   {["daily", "weekly", "monthly", "yearly"].map((f) => (
                     <button
                       id={`btn-filter-${f}`}
@@ -1252,7 +1361,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                   </div>
 
                   {/* Input area */}
-                  <div className="p-3 border-t border-stone-200 flex items-center gap-2 shrink-0">
+                  <div className="p-3 border-t border-stone-200 dark:border-[#21283b] flex items-center gap-2 shrink-0">
                     <input
                       type="text"
                       value={chatInput}
@@ -1260,7 +1369,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleSendAiChat();
                       }}
-                      className="flex-1 p-3 text-xs border border-stone-200 rounded-xl focus:outline-hidden focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                      className="flex-1 p-3 text-xs border border-stone-200 dark:border-[#2c354e] bg-white dark:bg-[#1a2030] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
                       placeholder="Ask the AI, or record a transaction dynamically..."
                     />
                     <button
@@ -1274,6 +1383,297 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 </div>
               </div>
             )}
+
+            {activeTab === "debts" && (() => {
+              const totalToReceive = debts
+                .filter(d => d.type === "receive" && d.status === "pending")
+                .reduce((sum, d) => sum + d.amount, 0);
+
+              const totalToPay = debts
+                .filter(d => d.type === "pay" && d.status === "pending")
+                .reduce((sum, d) => sum + d.amount, 0);
+
+              const netDebtBalance = totalToReceive - totalToPay;
+
+              return (
+                <div className="space-y-6">
+                  {/* Debts Summary Boxes */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] transition-all">
+                      <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Paisa Lena Hai (To Receive)</p>
+                      <p className="text-2xl font-bold font-display text-emerald-600 dark:text-emerald-400 tracking-tight">{formatPKR(totalToReceive)}</p>
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
+                        Amount expected from contacts
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] transition-all">
+                      <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Paisa Dena Hai (To Pay)</p>
+                      <p className="text-2xl font-bold font-display text-red-500 dark:text-red-400 tracking-tight">{formatPKR(totalToPay)}</p>
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
+                        Amount owed to contacts or suppliers
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] transition-all">
+                      <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Ledger Udhaar Balance</p>
+                      <p className={`text-2xl font-bold font-display tracking-tight ${netDebtBalance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                        {netDebtBalance >= 0 ? "+" : ""}{formatPKR(netDebtBalance)}
+                      </p>
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
+                        {netDebtBalance >= 0 ? "Surplus pending receivable assets" : "Higher payback liabilities"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Main Debts Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    
+                    {/* Left Column: Manual insertion & AI guide */}
+                    <div className="lg:col-span-4 space-y-6">
+                      {/* Add Debt Manual Form */}
+                      <div className="bg-white dark:bg-[#151926] p-6 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs">
+                        <h3 className="text-xs uppercase font-extrabold tracking-widest text-[#2563eb] dark:text-[#3b82f6] mb-4">Add Ledger Entry manually</h3>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase mb-1">Person / Name</label>
+                            <input
+                              type="text"
+                              value={debtPerson}
+                              onChange={(e) => setDebtPerson(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-stone-50 dark:bg-[#1a2030] border border-stone-200 dark:border-[#2c354e] rounded-lg focus:ring-1 focus:ring-blue-500 text-stone-900 dark:text-white"
+                              placeholder="Name (e.g., Zaid, Ahmad)"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase mb-1">Amount (PKR)</label>
+                            <input
+                              type="number"
+                              value={debtAmount}
+                              onChange={(e) => setDebtAmount(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-stone-50 dark:bg-[#1a2030] border border-stone-200 dark:border-[#2c354e] rounded-lg focus:ring-1 focus:ring-blue-500 text-stone-900 dark:text-white"
+                              placeholder="e.g. 2500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase mb-1">Ledger Type</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                id="btn-debt-type-receive"
+                                onClick={() => setDebtType("receive")}
+                                className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                                  debtType === "receive"
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-stone-100 dark:bg-[#1a2030] text-stone-600 dark:text-stone-300 hover:bg-stone-200"
+                                }`}
+                              >
+                                Lene Hain (Receive)
+                              </button>
+                              <button
+                                id="btn-debt-type-pay"
+                                onClick={() => setDebtType("pay")}
+                                className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                                  debtType === "pay"
+                                    ? "bg-red-600 text-white"
+                                    : "bg-stone-100 dark:bg-[#1a2030] text-stone-600 dark:text-stone-300 hover:bg-stone-200"
+                                }`}
+                              >
+                                Dene Hain (Pay)
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase mb-1">Details / Notes</label>
+                            <input
+                              type="text"
+                              value={debtNotes}
+                              onChange={(e) => setDebtNotes(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-stone-50 dark:bg-[#1a2030] border border-stone-200 dark:border-[#2c354e] rounded-lg focus:ring-1 focus:ring-blue-500 text-stone-900 dark:text-white"
+                              placeholder="e.g. For fuel, office, personal load"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase mb-1">Date</label>
+                            <input
+                              type="date"
+                              value={debtDate}
+                              onChange={(e) => setDebtDate(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-stone-50 dark:bg-[#1a2030] border border-stone-200 dark:border-[#2c354e] rounded-lg focus:ring-1 focus:ring-blue-500 text-stone-900 dark:text-white font-mono"
+                            />
+                          </div>
+
+                          <button
+                            id="btn-add-debt-manual"
+                            onClick={() => {
+                              const amt = parseFloat(debtAmount);
+                              if (!debtPerson.trim() || !amt || amt <= 0) return;
+                              const newD: Debt = {
+                                id: `debt-manual-${Date.now()}`,
+                                person: debtPerson,
+                                amount: amt,
+                                type: debtType,
+                                date: debtDate,
+                                notes: debtNotes || "Manual Entry",
+                                status: "pending"
+                              };
+                              setDebts(prev => [newD, ...prev]);
+                              setDebtPerson("");
+                              setDebtAmount("");
+                              setDebtNotes("");
+                            }}
+                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors"
+                          >
+                            Save Ledger Entry
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* AI Prompt guide card */}
+                      <div className="bg-stone-100 dark:bg-[#1e2538]/60 p-5 rounded-2xl border border-stone-200 dark:border-[#2c354e]">
+                        <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 mb-2 flex items-center gap-1.5 font-display">
+                          <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          AI Voice / Text Smart Ledger
+                        </h4>
+                        <div className="text-[11px] text-stone-600 dark:text-stone-300 leading-relaxed space-y-2">
+                          <p>Go to the <strong>Gemini Chat tab</strong>; just type or speak naturally e.g.:</p>
+                          <span className="block italic p-2 bg-white dark:bg-[#151926] rounded-lg font-mono text-emerald-600 dark:text-emerald-400">
+                            "Ahmad se 5000 lene hain notes: biryani"
+                          </span>
+                          <span className="block italic p-2 bg-white dark:bg-[#151926] rounded-lg font-mono text-red-600 dark:text-red-400">
+                            "Umar ko 1500 dene hain"
+                          </span>
+                          <span className="block p-2 bg-white dark:bg-[#151926] rounded-lg text-stone-700 dark:text-stone-300 leading-tight">
+                            Gemini will dynamically read and auto-record the lene/dene lines in this Ledger!
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Search and list details */}
+                    <div className="lg:col-span-8 bg-white dark:bg-[#151926] p-6 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 dark:border-[#21283b] pb-4">
+                        <div>
+                          <h3 className="text-sm font-bold text-stone-800 dark:text-gray-100 font-display">Outstanding ledger & accounts</h3>
+                          <p className="text-xs text-stone-500">List of pending and completed lendings</p>
+                        </div>
+                        
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={debtQuery}
+                            onChange={(e) => setDebtQuery(e.target.value)}
+                            placeholder="Search client/friend..."
+                            className="pl-9 pr-4 py-2 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {debts
+                          .filter(d => d.person.toLowerCase().includes(debtQuery.toLowerCase()))
+                          .map((d) => (
+                            <div
+                              id={`debt-row-${d.id}`}
+                              key={d.id}
+                              className={`p-4 rounded-xl border transition-all ${
+                                d.status === "settled"
+                                  ? "bg-stone-50/50 dark:bg-[#191f2e]/30 border-stone-150 dark:border-[#1d2639] opacity-75"
+                                  : d.type === "receive"
+                                    ? "bg-emerald-50 dark:bg-emerald-950/10 border-emerald-100 dark:border-emerald-950/20"
+                                    : "bg-red-50 dark:bg-red-950/10 border-red-100 dark:border-red-950/20"
+                              }`}
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                    d.status === "settled"
+                                      ? "bg-stone-100 dark:bg-[#1a2030] text-stone-500"
+                                      : d.type === "receive"
+                                        ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300"
+                                        : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300"
+                                  }`}>
+                                    {d.person.substring(0, 1).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-stone-900 dark:text-stone-100 leading-tight">{d.person}</span>
+                                      {d.status === "settled" ? (
+                                        <span className="text-[8px] font-bold font-mono tracking-wider bg-stone-200 dark:bg-stone-850 text-stone-600 dark:text-stone-450 px-1.5 py-0.5 rounded-full uppercase">
+                                          Cleared
+                                        </span>
+                                      ) : (
+                                        <span className={`text-[8px] font-bold font-mono tracking-wider px-1.5 py-0.5 rounded-full uppercase ${
+                                          d.type === "receive"
+                                            ? "bg-emerald-150 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300"
+                                            : "bg-red-150 dark:bg-red-900 text-red-800 dark:text-red-300"
+                                        }`}>
+                                          {d.type === "receive" ? "Milnay Hain (In)" : "Denay Hain (Out)"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-stone-500 dark:text-stone-400 block font-medium mt-0.5">{d.notes}</span>
+                                    <span className="text-[9px] text-stone-400 dark:text-stone-500 block font-mono mt-1">{d.date}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 justify-between sm:justify-end border-t sm:border-t-0 border-stone-100 dark:border-[#21283b] pt-2 sm:pt-0 shrink-0">
+                                  <span className={`text-xs sm:text-sm font-extrabold font-mono tracking-tight ${
+                                    d.status === "settled"
+                                      ? "text-stone-400 dark:text-stone-500 line-through"
+                                      : d.type === "receive"
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : "text-red-600 dark:text-red-400"
+                                  }`}>
+                                    {formatPKR(d.amount)}
+                                  </span>
+
+                                  <div className="flex items-center gap-1.5">
+                                    {d.status === "pending" && (
+                                      <button
+                                        id={`btn-settle-${d.id}`}
+                                        onClick={() => {
+                                          setDebts(prev => prev.map(db => db.id === d.id ? { ...db, status: "settled" as const } : db));
+                                        }}
+                                        className="p-1 px-2.5 bg-neutral-900 dark:bg-[#1a2030] hover:bg-neutral-800 text-white rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1"
+                                      >
+                                        <Check className="w-3 h-3 text-emerald-500" />
+                                        Clear debt
+                                      </button>
+                                    )}
+                                    <button
+                                      id={`btn-del-debt-${d.id}`}
+                                      onClick={() => {
+                                        setDebts(prev => prev.filter(db => db.id !== d.id));
+                                      }}
+                                      className="p-1.5 hover:bg-stone-100 dark:hover:bg-slate-800 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
+                                      title="Delete Entry"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                        {debts.filter(d => d.person.toLowerCase().includes(debtQuery.toLowerCase())).length === 0 && (
+                          <div className="text-center py-12 text-stone-400 dark:text-stone-550 border border-dashed border-stone-200 dark:border-[#21283b] rounded-xl">
+                            <Users className="w-8 h-8 mx-auto opacity-30 mb-2" />
+                            <p className="text-xs">Umm, is contact name ka koi record nahi mila.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Bottom AI Quick assistant container as featured in theme mock */}
             <div className="bg-stone-900 text-stone-100 p-6 rounded-3xl relative overflow-hidden shadow-md">

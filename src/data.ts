@@ -49,16 +49,22 @@ export const AVAILABLE_BANKS = [
 export const CATEGORIES = [
   "Salary",
   "Freelance",
-  "Food & Dining",
-  "Rent & Bills",
-  "Fuel & Commute",
-  "Utilities",
-  "Shopping",
-  "Entertainment",
-  "Medical & Health",
-  "Education",
-  "Savings & Investments",
-  "Other"
+  "Other Income",
+  "Home Expenses",
+  "Kids Expenses",
+  "My personal Expenses",
+  "Office Expenses",
+  "Family Expenses",
+  "Guest Expenses",
+  "Car Expenses",
+  "Bike Expenses",
+  "Fuel Expenses",
+  "Outing Expenses",
+  "Foods & Drink Expenses",
+  "Asset Building Expenses",
+  "Monthly Rashan Expenses",
+  "Bills",
+  "Mobile Loads"
 ];
 
 // Helper to assign a color based on category
@@ -66,29 +72,43 @@ export function getCategoryColor(category: string): string {
   switch (category) {
     case "Salary":
     case "Freelance":
+    case "Other Income":
       return "emerald";
-    case "Food & Dining":
-      return "orange";
-    case "Rent & Bills":
-      return "red";
-    case "Fuel & Commute":
-      return "amber";
-    case "Utilities":
+    case "Home Expenses":
       return "indigo";
-    case "Shopping":
-      return "purple";
-    case "Entertainment":
-      return "rose";
-    case "Medical & Health":
+    case "Kids Expenses":
       return "pink";
-    case "Education":
+    case "My personal Expenses":
+      return "purple";
+    case "Office Expenses":
+      return "blue";
+    case "Family Expenses":
       return "violet";
-    case "Savings & Investments":
+    case "Guest Expenses":
+      return "rose";
+    case "Car Expenses":
       return "cyan";
+    case "Bike Expenses":
+      return "teal";
+    case "Fuel Expenses":
+      return "amber";
+    case "Outing Expenses":
+      return "fuchsia";
+    case "Foods & Drink Expenses":
+      return "orange";
+    case "Asset Building Expenses":
+      return "sky";
+    case "Monthly Rashan Expenses":
+      return "lime";
+    case "Bills":
+      return "red";
+    case "Mobile Loads":
+      return "yellow";
     default:
       return "gray";
   }
 }
+
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
   {
@@ -105,7 +125,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     accountId: "meezan",
     type: "expense",
     amount: 35000,
-    category: "Rent & Bills",
+    category: "Bills",
     description: "Apartment Rent",
     date: "2026-05-02"
   },
@@ -115,7 +135,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     toAccountId: "cash",
     type: "transfer",
     amount: 5000,
-    category: "Savings & Investments",
+    category: "Asset Building Expenses",
     description: "Atm Withdrawal to Cash",
     date: "2026-05-03"
   },
@@ -124,7 +144,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     accountId: "cash",
     type: "expense",
     amount: 1500,
-    category: "Food & Dining",
+    category: "Foods & Drink Expenses",
     description: "Kabab & Chai with friends",
     date: "2026-05-10"
   },
@@ -133,7 +153,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     accountId: "ubl",
     type: "expense",
     amount: 2500,
-    category: "Fuel & Commute",
+    category: "Fuel Expenses",
     description: "Car Petrol Filling",
     date: "2026-05-20"
   },
