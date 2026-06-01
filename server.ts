@@ -76,12 +76,33 @@ app.post("/api/chat", async (req, res) => {
     const systemInstruction = `You are a helpful Urdu and English Roman-Urdu financial voice and text bot for a personal wallet tracker.
 The current UTC date is ${currentTime || new Date().toISOString().split('T')[0]}.
 
-You have five potential objectives:
-1. Parse transactions: If the user indicates they spent, received, or transferred money (e.g., "Meezan bank se grocery k liye 500 nikaley", "Salary received 50k in UBL", "Transfer 1000 from Meezan to Cash", "habib metro mai 200 expense kiya"), detect it and format it. Ensure you select the closest custom category from the list. DO NOT use this if the user asks to schedule, plan for a future date, or if they mention "schedule" or "is date/tarikh ko pay karna hai".
-2. Financial advice / Saving Plans: If the user asks about investments, financial plans, saving paths (e.g., "Meri Income k hisaab sy savings plans btao"), calculate their active balance, review their statements, and formulate customized saving advice.
-3. Query Past Transactions, Category Expense & History: If the user asks about past spendings, top categories, specific date records, category-wise breakdown (e.g., "Meri past transactions ko mdnzar rkh k btao", "pichle 2 hafte pehle k records do", "Sabse zyada expense kis cheez pe hua?", "meray past records mien fuel pur kitney paisay lagay?", "kis category may kitna expense hua hai?", "home expenses kitnay hain?"), read the user's transaction records from the list provided below, parse the dates/amounts, calculate category sums, and list them beautifully and warmly in sorted order with dates/amounts.
-4. Record and Manage Debts/Credits (Udhaar Ledger / Lene-Dene Tracker): If the user says they have to receive money (e.g., "Ahmad se 5000 lene hain notes: biryani", "Ali se 2000 lene hain", "Mene Zaid se 500 lene hain") or pay money (e.g., "Bhai ko 1000 dene hain milk supply k", "Umar ko 15000 dene hain rent", "Asad ko 400 pay karne hain petrol"), or settle a debt (e.g., "Ali k saare paise clear hogaye/mil gaye", "Asad ko paise de diye"), detect it and output action "add_debt" or "settle_debt".
-5. Schedule and Confirm Future Expenses (Schedule Panel): If the user wants to schedule an expense for a future date (e.g., "K-Electric bill of 8500 schedule krdo 10 date ko", "Meezan se rent 12000 schedule kr do", "schedule 3500 mobile load on 2026-06-15", "wifi bill schedule kr do", "is date ko pay krna hai"), or confirm/pay a scheduled item (e.g. "StormFiber broadband pay/confirm krdo", "KE-electric confirm kr do", "K-Electric pay/confirm kr do", "scheduled rent mark as paid/confirm"), parse and detect it. Set action to "schedule_expense" or "confirm_schedule" accordingly.
+CRITICAL ROUTING RULES (DECISION TREE):
+Before doing anything, analyze the user's message to decide which ACTION is requested:
+
+1. schedule_expense:
+   - Use this ACTION if the user wants to SCHEDULE an expense for a future date, plans to pay a bill/rent in the future, or uses keywords like "schedule", "shedule", "laga do", "is date ko dena hai", "rent dena hai 5 ko", "bill 10 tarikh ko pay krna hai".
+   - You MUST populate "scheduledExpense" inside the JSON response.
+   - Example 1: "K-Electric bill of 8500 schedule krdo 10 date ko" -> action: "schedule_expense"
+   - Example 2: "Meezan se rent 12000 schedule kr do" -> action: "schedule_expense"
+   - Example 3: "schedule 3500 mobile load on 2026-06-15" -> action: "schedule_expense"
+   - Example 4: "wifi bill schedule kr do" -> action: "schedule_expense"
+   - Example 5: "mizaan se rent 22000 schedule kardo key 5 tarikh ko dena hai" -> action: "schedule_expense"
+   - CRITICAL: "schedule_expense" does NOT deduct any balance today. It only schedules a reminder/plan. Do NOT use "add_transaction" for future planning or "schedule" requests.
+
+2. confirm_schedule:
+   - Use this ACTION if the user indicates they are confirming, paying, or settling an already scheduled expense.
+   - Example: "StormFiber broadband pay/confirm krdo", "KE-electric confirm kr do", "K-Electric pay/confirm kr do", "scheduled rent mark as paid/confirm".
+   - You MUST populate "confirmSchedule" inside the JSON response.
+
+3. add_transaction:
+   - ONLY use this ACTION if the transaction HAS ALREADY HAPPENED or is an immediate instant payment statement.
+   - Key indicators: past tense in Urdu/English, e.g., "nikaley", "nikale", "expense kiya", "spent", "received", "added", "transfer kar diya", "pay kiya".
+   - Example: "Meezan bank se grocery k liye 500 nikaley" -> action: "add_transaction", transaction: { ... }
+   - Example: "Salary received 50k in UBL" -> action: "add_transaction"
+   - Example: "Transfer 1000 from Meezan to Cash" -> action: "add_transaction"
+
+4. add_debt or settle_debt:
+   - Use this if they are lending/borrowing money ("lene hain" / "dene hain") or clearing a debt ("clear hogaye", "de diye").
 
 The user's active Bank/Cash accounts are:
 ${accountsDescription}
@@ -134,78 +155,90 @@ The JSON structure must match this:
 }
 
 Guidelines for parsing:
-- CRITICAL PRIORITIZATION rule: If the user says "schedule" or uses Pakistani Urdu terms like "schedule krdo", "rent/bill is date ko dena hai" or mentions future scheduling, you MUST set action to "schedule_expense" and populate the "scheduledExpense" block. Do NOT set action to "add_transaction" or "add_debt" for these requests. Instantly deducting money is ONLY done if they say something actually happened (e.g. "ho gaya hay", "pay kar diya") or confirm a scheduled bill.
+- CRITICAL PRIORITIZATION rule: If the user says "schedule" or uses Urdu terms like "schedule krdo", "shedule", "laga do", "dena hai is tarikh ko", you MUST set action to "schedule_expense" and populate the "scheduledExpense" block. Do NOT set action to "add_transaction" or "add_debt" for these requests. Instantly deducting money is ONLY done if they say something actually happened (e.g. "ho gaya hay", "pay kar diya") or confirm a scheduled bill.
 - If mapping to expense category, only use EXACT names from: ${(categories || []).join(", ")}. For example, if user mentions fuel/petrol, map it to "Fuel Expenses"; if they mention mobile balance, map to "Mobile Loads"; if they mention food or restaurant, map to "Foods & Drink Expenses"; if bills, map to "Bills"; if family/home, use "Family Expenses" or "Home Expenses".
 - If it is not an action (e.g. asking for report or plan), set action to "none", transaction to null, debt to null, settleDebt to null, scheduledExpense to null, confirmSchedule to null.`;
 
     const userPrompt = `User Message: "${message}"\n\nPlease respond according to the instructions in JSON format.`;
 
-    const response = await client.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            responseText: { 
-              type: Type.STRING, 
-              description: "Short, warm response in Roman Urdu or English detailing exactly what action was taken." 
-            },
-            action: { 
-              type: Type.STRING, 
-              enum: ["add_transaction", "add_debt", "settle_debt", "schedule_expense", "confirm_schedule", "none"],
-              description: "Parsed action. Choose 'schedule_expense' to queue a future expense without deducting money today. Choose 'add_transaction' ONLY if it already happened or was instantly paid."
-            },
-            transaction: {
-              type: Type.OBJECT,
-              properties: {
-                type: { type: Type.STRING, enum: ["income", "expense", "transfer"] },
-                amount: { type: Type.NUMBER },
-                category: { type: Type.STRING },
-                description: { type: Type.STRING },
-                accountId: { type: Type.STRING },
-                toAccountId: { type: Type.STRING }
-              }
-            },
-            debt: {
-              type: Type.OBJECT,
-              properties: {
-                person: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                type: { type: Type.STRING, enum: ["receive", "pay"] },
-                notes: { type: Type.STRING },
-                date: { type: Type.STRING }
-              }
-            },
-            settleDebt: {
-              type: Type.OBJECT,
-              properties: {
-                person: { type: Type.STRING }
-              }
-            },
-            scheduledExpense: {
-              type: Type.OBJECT,
-              properties: {
-                accountId: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                category: { type: Type.STRING },
-                description: { type: Type.STRING },
-                date: { type: Type.STRING }
-              }
-            },
-            confirmSchedule: {
-              type: Type.OBJECT,
-              properties: {
-                description: { type: Type.STRING }
-              }
+    const modelConfig = {
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          responseText: { 
+            type: Type.STRING, 
+            description: "Short, warm response in Roman Urdu or English detailing exactly what action was taken." 
+          },
+          action: { 
+            type: Type.STRING, 
+            enum: ["add_transaction", "add_debt", "settle_debt", "schedule_expense", "confirm_schedule", "none"],
+            description: "Parsed action. Choose 'schedule_expense' to queue a future expense without deducting money today. Choose 'add_transaction' ONLY if it already happened or was instantly paid."
+          },
+          transaction: {
+            type: Type.OBJECT,
+            properties: {
+              type: { type: Type.STRING, enum: ["income", "expense", "transfer"] },
+              amount: { type: Type.NUMBER },
+              category: { type: Type.STRING },
+              description: { type: Type.STRING },
+              accountId: { type: Type.STRING },
+              toAccountId: { type: Type.STRING }
             }
           },
-          required: ["responseText", "action"]
-        }
+          debt: {
+            type: Type.OBJECT,
+            properties: {
+              person: { type: Type.STRING },
+              amount: { type: Type.NUMBER },
+              type: { type: Type.STRING, enum: ["receive", "pay"] },
+              notes: { type: Type.STRING },
+              date: { type: Type.STRING }
+            }
+          },
+          settleDebt: {
+            type: Type.OBJECT,
+            properties: {
+              person: { type: Type.STRING }
+            }
+          },
+          scheduledExpense: {
+            type: Type.OBJECT,
+            properties: {
+              accountId: { type: Type.STRING },
+              amount: { type: Type.NUMBER },
+              category: { type: Type.STRING },
+              description: { type: Type.STRING },
+              date: { type: Type.STRING }
+            }
+          },
+          confirmSchedule: {
+            type: Type.OBJECT,
+            properties: {
+              description: { type: Type.STRING }
+            }
+          }
+        },
+        required: ["responseText", "action"]
       }
-    });
+    };
+
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: userPrompt,
+        config: modelConfig
+      });
+    } catch (primaryErr: any) {
+      console.warn("Primary model gemini-3.5-flash failed or busy, trying fallback gemini-3.1-flash-lite:", primaryErr);
+      response = await client.models.generateContent({
+        model: "gemini-3.1-flash-lite",
+        contents: userPrompt,
+        config: modelConfig
+      });
+    }
 
     const replyRaw = response.text || "{}";
     let replyObj;
