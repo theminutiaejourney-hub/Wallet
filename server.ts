@@ -40,7 +40,7 @@ app.get("/api/health", (req, res) => {
 
 // AI Assistant Chat endpoint
 app.post("/api/chat", async (req, res) => {
-  const { message, accounts, categories, transactions, debts, currentTime } = req.body;
+  const { message, accounts, categories, transactions, debts, scheduledExpenses, currentTime } = req.body;
 
   if (!message) {
     return res.status(400).json({ error: "Message is required" });
@@ -68,14 +68,20 @@ app.post("/api/chat", async (req, res) => {
       `- Person: "${d.person}", Amount: Rs. ${d.amount}, Type: "${d.type}" (${d.type === "receive" ? "Lene hain / To Receive" : "Dene hain / To Pay"}), Date: ${d.date}, Status: "${d.status}", Notes: "${d.notes}"`
     ).join("\n");
 
+    // Map scheduled expenses list
+    const scheduledExpensesDescription = (scheduledExpenses || []).map((s: any) =>
+      `- ID: "${s.id}", Account: "${accountsMap.get(s.accountId) || s.accountId}", Amount: Rs. ${s.amount}, Category: "${s.category}", Description: "${s.description}", Date: ${s.date}`
+    ).join("\n");
+
     const systemInstruction = `You are a helpful Urdu and English Roman-Urdu financial voice and text bot for a personal wallet tracker.
 The current UTC date is ${currentTime || new Date().toISOString().split('T')[0]}.
 
-You have four potential objectives:
+You have five potential objectives:
 1. Parse transactions: If the user indicates they spent, received, or transferred money (e.g., "Meezan bank se grocery k liye 500 nikaley", "Salary received 50k in UBL", "Transfer 1000 from Meezan to Cash", "habib metro mai 200 expense kiya"), detect it and format it. Ensure you select the closest custom category from the list.
 2. Financial advice / Saving Plans: If the user asks about investments, financial plans, saving paths (e.g., "Meri Income k hisaab sy savings plans btao"), calculate their active balance, review their statements, and formulate customized saving advice.
 3. Query Past Transactions, Category Expense & History: If the user asks about past spendings, top categories, specific date records, category-wise breakdown (e.g., "Meri past transactions ko mdnzar rkh k btao", "pichle 2 hafte pehle k records do", "Sabse zyada expense kis cheez pe hua?", "meray past records mien fuel pur kitney paisay lagay?", "kis category may kitna expense hua hai?", "home expenses kitnay hain?"), read the user's transaction records from the list provided below, parse the dates/amounts, calculate category sums, and list them beautifully and warmly in sorted order with dates/amounts.
 4. Record and Manage Debts/Credits (Udhaar Ledger / Lene-Dene Tracker): If the user says they have to receive money (e.g., "Ahmad se 5000 lene hain notes: biryani", "Ali se 2000 lene hain", "Mene Zaid se 500 lene hain") or pay money (e.g., "Bhai ko 1000 dene hain milk supply k", "Umar ko 15000 dene hain rent", "Asad ko 400 pay karne hain petrol"), or settle a debt (e.g., "Ali k saare paise clear hogaye/mil gaye", "Asad ko paise de diye"), detect it and output action "add_debt" or "settle_debt".
+5. Schedule and Confirm Future Expenses (Schedule Panel): If the user wants to schedule an expense for a future date (e.g., "K-Electric bill of 8500 schedule krdo 10 date ko", "Meezan se rent 12000 schedule kr do", "schedule 3500 mobile load on 2026-06-15", "wifi bill schedule kr do"), or confirm/pay a scheduled item (e.g. "StormFiber broadband pay/confirm krdo", "KE-electric confirm kr do", "K-Electric pay/confirm kr do", "scheduled rent mark as paid/confirm"), parse and detect it. Set action to "schedule_expense" or "confirm_schedule" accordingly.
 
 The user's active Bank/Cash accounts are:
 ${accountsDescription}
@@ -89,11 +95,14 @@ ${transactionsDescription || "No past transactions recorded yet."}
 The user's active Debts (Udhaar Ledger - Lene/Dene records):
 ${debtsDescription || "No pending debts recorded yet."}
 
+The user's pending Scheduled Expenses:
+${scheduledExpensesDescription || "No pending scheduled expenses currently."}
+
 You MUST output your response strictly as a single JSON object. Do not include markdown codeblocks or other formatting headers.
 The JSON structure must match this:
 {
-  "responseText": "Your natural language response in Roman Urdu (or English if the user asked in English). Be brief, polite, and clear. If they asked to add/parse a transaction or debt, mention exactly what action was taken. If they asked about past history, performing category expense summaries, or listing records, do the math from the records provided and output them beautifully, warmly, and clearly.",
-  "action": "add_transaction" or "add_debt" or "settle_debt" or "none",
+  "responseText": "Your natural language response in Roman Urdu (or English if the user asked in English). Be brief, polite, and clear. Mention exactly what action was taken (e.g., Scheduled, Confirmed, Created).",
+  "action": "add_transaction" or "add_debt" or "settle_debt" or "schedule_expense" or "confirm_schedule" or "none",
   "transaction": {
     "type": "income" or "expense" or "transfer",
     "amount": status numeric amount value,
@@ -107,16 +116,26 @@ The JSON structure must match this:
     "amount": numeric amount value,
     "type": "receive" (for lene hain) or "pay" (for dene hain),
     "notes": "notes/description explaining what the Udhaar is for",
-    "date": null or "YYYY-MM-DD (target date mentioned, or default to current date if none mentioned)"
+    "date": null or "YYYY-MM-DD"
   },
   "settleDebt": {
     "person": "Name of the person whose debt should be marked settled"
+  },
+  "scheduledExpense": {
+    "accountId": "ID of the account to use (e.g., 'meezan', 'ubl', 'cash', 'habibmetro')",
+    "amount": numeric amount value,
+    "category": "one of the categories",
+    "description": "short custom description e.g. 'StormFiber Broadband' or 'K-Electric Bill'",
+    "date": "YYYY-MM-DD for the future payment date"
+  },
+  "confirmSchedule": {
+    "description": "short matching text to confirm the scheduled expense (e.g. 'StormFiber' or 'K-Electric')"
   }
 }
 
 Guidelines for parsing:
 - If mapping to expense category, only use EXACT names from: ${(categories || []).join(", ")}. For example, if user mentions fuel/petrol, map it to "Fuel Expenses"; if they mention mobile balance, map to "Mobile Loads"; if they mention food or restaurant, map to "Foods & Drink Expenses"; if bills, map to "Bills"; if family/home, use "Family Expenses" or "Home Expenses".
-- If it is not an action (e.g. asking for report or plan), set action to "none", transaction to null, debt to null, settleDebt to null.`;
+- If it is not an action (e.g. asking for report or plan), set action to "none", transaction to null, debt to null, settleDebt to null, scheduledExpense to null, confirmSchedule to null.`;
 
     const userPrompt = `User Message: "${message}"\n\nPlease respond according to the instructions in JSON format.`;
 

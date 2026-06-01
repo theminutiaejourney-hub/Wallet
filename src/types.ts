@@ -45,3 +45,14 @@ export interface Debt {
   status: "pending" | "settled";
 }
 
+export interface ScheduledExpense {
+  id: string;
+  accountId: string;
+  amount: number;
+  category: string;
+  description: string;
+  date: string; // ISO format YYYY-MM-DD
+  status: "pending" | "paid";
+}
+
+

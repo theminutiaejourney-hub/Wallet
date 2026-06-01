@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Account, Transaction, ChatMessage, Debt } from "./types";
+import { Account, Transaction, ChatMessage, Debt, ScheduledExpense } from "./types";
 import { INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, CATEGORIES, formatPKR, getCategoryColor } from "./data";
 import { 
   Plus, 
@@ -13,6 +13,7 @@ import {
   Calendar, 
   ChevronRight, 
   Search, 
+  Clock, 
   Filter, 
   RefreshCw, 
   Info, 
@@ -80,6 +81,30 @@ export default function App() {
     ];
   });
 
+  const [scheduledExpenses, setScheduledExpenses] = useState<ScheduledExpense[]>(() => {
+    const saved = localStorage.getItem("wall_scheduled_expenses");
+    return saved ? JSON.parse(saved) : [
+      {
+        id: "sched-1",
+        accountId: "meezan",
+        amount: 8500,
+        category: "Bills",
+        description: "K-Electric Bill Payment",
+        date: "2026-06-10",
+        status: "pending"
+      },
+      {
+        id: "sched-2",
+        accountId: "ubl",
+        amount: 3500,
+        category: "Mobile Loads",
+        description: "StormFiber Broadband Wifi",
+        date: "2026-06-15",
+        status: "pending"
+      }
+    ];
+  });
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem("wallet_dark_mode") === "true";
   });
@@ -91,6 +116,16 @@ export default function App() {
   const [debtNotes, setDebtNotes] = useState("");
   const [debtDate, setDebtDate] = useState(new Date().toISOString().split("T")[0]);
   const [debtQuery, setDebtQuery] = useState(""); // filter debts by name
+
+  // Scheduled Expense form states
+  const [isAddSchedOpen, setIsAddSchedOpen] = useState(false);
+  const [schedAccountId, setSchedAccountId] = useState("meezan");
+  const [schedAmount, setSchedAmount] = useState("");
+  const [schedCategory, setSchedCategory] = useState("Bills");
+  const [schedDescription, setSchedDescription] = useState("");
+  const [schedDate, setSchedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [schedQuery, setSchedQuery] = useState("");
+
 
   
   // chat state
@@ -151,6 +186,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("wall_debts", JSON.stringify(debts));
   }, [debts]);
+
+  useEffect(() => {
+    localStorage.setItem("wall_scheduled_expenses", JSON.stringify(scheduledExpenses));
+  }, [scheduledExpenses]);
 
    useEffect(() => {
     if (darkMode) {
@@ -365,6 +404,61 @@ export default function App() {
     setTransactions(transactions.filter(t => t.id !== id));
   };
 
+  // Scheduled Expense Handlers
+  const handleAddScheduledExpense = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const amt = parseFloat(schedAmount);
+    if (isNaN(amt) || amt <= 0) return;
+
+    const newSched: ScheduledExpense = {
+      id: `sched-${Date.now()}`,
+      accountId: schedAccountId,
+      amount: amt,
+      category: schedCategory,
+      description: schedDescription || "Scheduled Expense",
+      date: schedDate || new Date().toISOString().split("T")[0],
+      status: "pending"
+    };
+
+    setScheduledExpenses(prev => [newSched, ...prev]);
+    setIsAddSchedOpen(false);
+    setSchedAmount("");
+    setSchedDescription("");
+  };
+
+  const confirmScheduledExpense = (id: string) => {
+    const expense = scheduledExpenses.find(s => s.id === id);
+    if (!expense) return;
+
+    const amt = expense.amount;
+    const selectedId = expense.accountId;
+
+    const updatedAccounts = accounts.map(acc => {
+      if (acc.id === selectedId) {
+        return { ...acc, balance: acc.balance - amt };
+      }
+      return acc;
+    });
+
+    const newTx: Transaction = {
+      id: `sched-tx-${Date.now()}`,
+      accountId: selectedId,
+      type: "expense",
+      amount: amt,
+      category: expense.category || "Bills",
+      description: expense.description || "Scheduled Expense Paid",
+      date: new Date().toISOString().split("T")[0]
+    };
+
+    setAccounts(updatedAccounts);
+    setTransactions(prev => [newTx, ...prev]);
+    setScheduledExpenses(prev => prev.filter(s => s.id !== id));
+  };
+
+  const deleteScheduledExpense = (id: string) => {
+    setScheduledExpenses(prev => prev.filter(s => s.id !== id));
+  };
+
   // Add individual Bank Account custom
   const handleAddAccount = (e: React.FormEvent) => {
     e.preventDefault();
@@ -459,6 +553,7 @@ export default function App() {
           categories: CATEGORIES,
           transactions: transactions,
           debts: debts,
+          scheduledExpenses: scheduledExpenses,
           currentTime: new Date().toISOString()
         })
       });
@@ -551,6 +646,62 @@ export default function App() {
             }
             return db;
           }));
+        }
+      } else if (data.action === "schedule_expense" && data.scheduledExpense) {
+        const se = data.scheduledExpense;
+        const amt = parseFloat(se.amount);
+        if (amt > 0) {
+          let selectedId = accounts[0]?.id || "meezan";
+          if (se.accountId) {
+            const matched = accounts.find(a => 
+              a.id.toLowerCase() === se.accountId.toLowerCase() ||
+              a.name.toLowerCase().includes(se.accountId.toLowerCase())
+            );
+            if (matched) selectedId = matched.id;
+          }
+
+          const newSched: ScheduledExpense = {
+            id: `sched-ai-${Date.now()}`,
+            accountId: selectedId,
+            amount: amt,
+            category: se.category || "Bills",
+            description: se.description || "AI Scheduled Expense",
+            date: se.date || new Date().toISOString().split("T")[0],
+            status: "pending"
+          };
+          setScheduledExpenses(prev => [newSched, ...prev]);
+        }
+      } else if (data.action === "confirm_schedule" && data.confirmSchedule) {
+        const keyword = data.confirmSchedule.description?.toLowerCase() || "";
+        if (keyword) {
+          const matchedExpense = scheduledExpenses.find(s => 
+            s.description.toLowerCase().includes(keyword) || 
+            s.category.toLowerCase().includes(keyword)
+          );
+          if (matchedExpense) {
+            const amt = matchedExpense.amount;
+            const selectedId = matchedExpense.accountId;
+
+            setAccounts(prevAccs => prevAccs.map(acc => {
+              if (acc.id === selectedId) {
+                return { ...acc, balance: acc.balance - amt };
+              }
+              return acc;
+            }));
+
+            const newTx: Transaction = {
+              id: `sched-tx-ai-${Date.now()}`,
+              accountId: selectedId,
+              type: "expense",
+              amount: amt,
+              category: matchedExpense.category || "Bills",
+              description: matchedExpense.description || "Scheduled Expense Paid",
+              date: new Date().toISOString().split("T")[0]
+            };
+
+            setTransactions(prev => [newTx, ...prev]);
+            setScheduledExpenses(prev => prev.filter(s => s.id !== matchedExpense.id));
+          }
         }
       }
 
@@ -724,6 +875,22 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               </button>
 
               <button
+                id="btn-tab-schedule"
+                onClick={() => setActiveTab("schedule" as any)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
+                  (activeTab as string) === "schedule"
+                    ? "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 shadow-xs font-bold"
+                    : "text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#1e2538]/60"
+                }`}
+              >
+                <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span>Scheduled Bills</span>
+                <span className="ml-auto bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                  {scheduledExpenses.filter(s => s.status === "pending").length}
+                </span>
+              </button>
+
+              <button
                 id="btn-tab-ai"
                 onClick={() => setActiveTab("ai")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all duration-200 ${
@@ -771,6 +938,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 <span>{activeTab === "transactions" && "Financial Ledger records"}</span>
                 <span>{activeTab === "ai" && "Gemini Savings AI Advisor"}</span>
                 <span>{activeTab === "debts" && "Lene-Dene (Udhaar Ledger)"}</span>
+                <span>{(activeTab as string) === "schedule" && "Scheduled Bills & Future Expenses"}</span>
               </h2>
             </div>
 
@@ -2157,6 +2325,237 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                           <div className="text-center py-12 text-stone-400 dark:text-stone-550 border border-dashed border-stone-200 dark:border-[#21283b] rounded-xl">
                             <Users className="w-8 h-8 mx-auto opacity-30 mb-2" />
                             <p className="text-xs">Umm, is contact name ka koi record nahi mila.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })()}
+
+            {(activeTab as string) === "schedule" && (() => {
+              const pendingSchedules = scheduledExpenses.filter(s => s.status === "pending");
+              const totalPendingAmount = pendingSchedules.reduce((sum, s) => sum + s.amount, 0);
+
+              return (
+                <div className="space-y-6">
+                  {/* Scheduled Summary Boxes */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] transition-all">
+                      <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Pending Scheduled Total</p>
+                      <p className="text-2xl font-bold font-display text-amber-600 dark:text-amber-400 tracking-tight">{formatPKR(totalPendingAmount)}</p>
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
+                        Total funds committed for future payments
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] transition-all">
+                      <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Pending Schedules Count</p>
+                      <p className="text-2xl font-bold font-display text-amber-500 dark:text-amber-400 tracking-tight">{pendingSchedules.length} Items</p>
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
+                        Future bills or rent payments left to settle
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Operational block */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    
+                    {/* Left Column: Form to manually schedule */}
+                    <div className="lg:col-span-4 bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] space-y-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-stone-900 dark:text-white uppercase tracking-wider font-mono">Manually Schedule Expense</h4>
+                        <p className="text-[11px] text-stone-400 dark:text-stone-500">Add a future bill, rent commitment, or loan paying plan</p>
+                      </div>
+
+                      <form onSubmit={handleAddScheduledExpense} className="space-y-3.5">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Amount (PKR)</label>
+                          <input
+                            type="number"
+                            required
+                            value={schedAmount}
+                            onChange={(e) => setSchedAmount(e.target.value)}
+                            placeholder="e.g. 8500"
+                            className="w-full p-2.5 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Source Wallet / Bank</label>
+                          <select
+                            value={schedAccountId || ""}
+                            onChange={(e) => setSchedAccountId(e.target.value)}
+                            className="w-full p-2.5 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          >
+                            <option value="">-- Choose Account --</option>
+                            {accounts.map(acc => (
+                              <option key={acc.id} value={acc.id}>{acc.name} (PKR {acc.balance.toLocaleString()})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Category</label>
+                          <select
+                            value={schedCategory}
+                            onChange={(e) => setSchedCategory(e.target.value)}
+                            className="w-full p-2.5 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          >
+                            {CATEGORIES.filter(c => c !== "Salary" && c !== "Freelance" && c !== "Other Income").map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Description / Payee</label>
+                          <input
+                            type="text"
+                            required
+                            value={schedDescription}
+                            onChange={(e) => setSchedDescription(e.target.value)}
+                            placeholder="e.g. K-Electric Bill, Rent, Internet"
+                            className="w-full p-2.5 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-extrabold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Due Date</label>
+                          <input
+                            type="date"
+                            required
+                            value={schedDate}
+                            onChange={(e) => setSchedDate(e.target.value)}
+                            className="w-full p-2.5 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add Schedule Expense
+                        </button>
+                      </form>
+
+                      {/* AI Guideline help box and pointers */}
+                      <div className="bg-amber-500/5 dark:bg-amber-500/5 p-4 rounded-xl border border-amber-500/10 dark:border-amber-500/10 space-y-2 mt-4">
+                        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+                          <Sparkles className="w-4 h-4 shrink-0" />
+                          <h5 className="font-bold text-[10px] uppercase font-mono tracking-wider">AI Voice & Chat Integration</h5>
+                        </div>
+                        <div className="text-[11px] text-stone-650 dark:text-stone-300 leading-relaxed space-y-2">
+                          <p>Aap <strong>Gemini Chat tab</strong> me bol kr bhi schedule krwa skte hain:</p>
+                          <span className="block italic p-2 bg-stone-50 dark:bg-[#131622] rounded-lg font-mono text-amber-650 dark:text-amber-400 text-[10px]">
+                            "Meezan bank se K-Electric bill 8500 Rs schedule krdo 10 June ko"
+                          </span>
+                          <p className="mt-1">Aur pay hone k bad directly AI ko bol skte hain:</p>
+                          <span className="block italic p-2 bg-stone-50 dark:bg-[#131622] rounded-lg font-mono text-emerald-600 dark:text-emerald-400 text-[10px]">
+                            "K-Electric bill confirm krdo/pay hogaya"
+                          </span>
+                          <p className="text-[10px] text-stone-500 leading-tight">
+                            Gemini automatically schedule list se entry clear kr k balance se minus kr dega!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Search and Scheduled Items List */}
+                    <div className="lg:col-span-8 bg-white dark:bg-[#151926] p-6 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 dark:border-[#21283b] pb-4">
+                        <div>
+                          <h3 className="text-sm font-bold text-stone-800 dark:text-gray-100 font-display">Active Pending Schedules</h3>
+                          <p className="text-xs text-stone-500">Click payload to confirm manual transaction paid or delete it</p>
+                        </div>
+                        
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={schedQuery}
+                            onChange={(e) => setSchedQuery(e.target.value)}
+                            placeholder="Search descriptions..."
+                            className="pl-9 pr-4 py-2 text-xs bg-stone-50 dark:bg-[#1a2030] text-stone-900 dark:text-white border border-stone-200 dark:border-[#2c354e] rounded-xl focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {pendingSchedules
+                          .filter(s => s.description.toLowerCase().includes(schedQuery.toLowerCase()))
+                          .map((s) => {
+                            const parentAccountName = accounts.find(a => a.id === s.accountId)?.name || s.accountId;
+                            const isPastDue = new Date(s.date) < new Date();
+                            
+                            return (
+                              <div
+                                id={`sched-row-${s.id}`}
+                                key={s.id}
+                                className={`p-4 rounded-xl border transition-all bg-stone-50/20 dark:bg-[#192132]/25 hover:bg-stone-50/75 dark:hover:bg-[#192132]/45 border-[#E5E7EB] dark:border-[#21283b]`}
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  <div className="flex items-start gap-3">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400`}>
+                                      <Clock className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-stone-900 dark:text-stone-100 leading-tight">{s.description}</span>
+                                        <span className="text-[8px] font-bold font-mono tracking-wider bg-stone-100 dark:bg-[#11141e]/80 text-stone-600 dark:text-stone-300 px-1.5 py-0.5 rounded-full uppercase">
+                                          {s.category}
+                                        </span>
+                                        {isPastDue && (
+                                          <span className="text-[8px] font-bold font-mono tracking-wider bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full uppercase">
+                                            Overdue!
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] text-stone-500 dark:text-stone-400 block font-medium mt-0.5">
+                                        Source Account: <strong className="text-stone-700 dark:text-stone-200">{parentAccountName}</strong>
+                                      </span>
+                                      <span className="text-[9px] text-stone-400 dark:text-stone-500 block font-mono mt-1 font-semibold">Due Payment Date: {s.date}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-3 justify-between sm:justify-end border-t sm:border-t-0 border-stone-100 dark:border-[#21283b] pt-2 sm:pt-0 shrink-0">
+                                    <span className="text-xs sm:text-sm font-extrabold font-mono tracking-tight text-amber-600 dark:text-amber-400">
+                                      {formatPKR(s.amount)}
+                                    </span>
+
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        id={`btn-confirm-pay-${s.id}`}
+                                        onClick={() => confirmScheduledExpense(s.id)}
+                                        className="p-1.5 px-2.5 bg-neutral-900 dark:bg-amber-950/60 hover:bg-neutral-800 dark:hover:bg-amber-900 text-white rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <Check className="w-3 h-3 text-emerald-500" />
+                                        Pay & Deduct
+                                      </button>
+                                      
+                                      <button
+                                        id={`btn-del-sched-${s.id}`}
+                                        onClick={() => deleteScheduledExpense(s.id)}
+                                        className="p-1.5 hover:bg-stone-100 dark:hover:bg-[#252a3a] text-stone-400 hover:text-red-650 rounded-lg transition-colors cursor-pointer"
+                                        title="Cancel Schedule"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {pendingSchedules.filter(s => s.description.toLowerCase().includes(schedQuery.toLowerCase())).length === 0 && (
+                          <div className="text-center py-12 text-stone-400 dark:text-stone-500 border border-dashed border-stone-200 dark:border-[#21283b] rounded-xl bg-stone-50/20 dark:bg-transparent">
+                            <Clock className="w-8 h-8 mx-auto opacity-30 mb-2" />
+                            <p className="text-xs font-semibold">Umm, koi pending scheduled bills ya expenses nahi mile.</p>
+                            <p className="text-[10px] mt-1 text-stone-450 dark:text-stone-500">Aap upar diye form ya AI chat se schedule add kr skte hain.</p>
                           </div>
                         )}
                       </div>
