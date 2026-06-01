@@ -49,6 +49,8 @@ export default function App() {
   // New features state
   const [visualPeriod, setVisualPeriod] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
   const [selectedVisualCategory, setSelectedVisualCategory] = useState<string | null>(null);
+  const [incomeVisualPeriod, setIncomeVisualPeriod] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
+  const [selectedIncomeVisualCategory, setSelectedIncomeVisualCategory] = useState<string | null>(null);
   const [hideBalances, setHideBalances] = useState<boolean>(() => {
     return localStorage.getItem("wallet_hide_balances") === "true";
   });
@@ -214,6 +216,42 @@ export default function App() {
     .sort((a, b) => b.value - a.value);
 
   const totalSpentInVisualPeriod = visualCategorySummary.reduce((sum, c) => sum + c.value, 0);
+
+  // Dedicated Income Analysis calculations for active incomeVisualPeriod
+  const getIncomeVisualPeriodTransactions = () => {
+    let list = transactions.filter(t => t.type === "income");
+    if (selectedAccountId) {
+      list = list.filter(t => t.accountId === selectedAccountId || t.toAccountId === selectedAccountId);
+    }
+    const now = new Date();
+    return list.filter(t => {
+      const txDateObj = new Date(t.date);
+      const diffTime = Math.abs(now.getTime() - txDateObj.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (incomeVisualPeriod === "daily") {
+        return diffDays <= 1 || t.date === now.toISOString().split("T")[0];
+      } else if (incomeVisualPeriod === "weekly") {
+        return diffDays <= 7;
+      } else if (incomeVisualPeriod === "monthly") {
+        return diffDays <= 30;
+      } else {
+        return diffDays <= 365;
+      }
+    });
+  };
+
+  const incomeVisualPeriodTxs = getIncomeVisualPeriodTransactions();
+
+  const incomeVisualCategorySummary = CATEGORIES.map(cat => {
+    const earned = incomeVisualPeriodTxs
+      .filter(t => t.category === cat)
+      .reduce((sum, t) => sum + t.amount, 0);
+    return { name: cat, value: earned };
+  }).filter(c => c.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const totalEarnedInIncomeVisualPeriod = incomeVisualCategorySummary.reduce((sum, c) => sum + c.value, 0);
 
   // Filtering transactions by visual tab/time duration
   const getFilteredTransactions = () => {
@@ -1138,6 +1176,229 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                             <td className="py-2 px-3 text-right font-black text-red-650 font-mono">{renderBalance(t.amount)}</td>
                                             <td className="py-2 px-3 text-right font-black font-mono text-blue-650 dark:text-blue-400 text-[10px]/none">
                                               <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-805 dark:text-blue-300 px-1.5 py-0.5 rounded-sm">
+                                                {subSharePerc}%
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Interactive Income Visual Analysis Card */}
+                  <div className="bg-white dark:bg-[#151926] p-6 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs transition-colors">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h3 className="text-sm font-bold text-stone-850 dark:text-white flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                          <span>Visual Income Analysis (By source)</span>
+                        </h3>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 font-medium">Interactive live income source analysis by active duration</p>
+                      </div>
+
+                      {/* Period Selection Controls local to the income chart */}
+                      <div className="flex bg-stone-100 dark:bg-[#1f2638] p-1 rounded-xl self-start sm:self-auto border border-stone-200/50 dark:border-[#2c354e]">
+                        {(["daily", "weekly", "monthly", "yearly"] as const).map((period) => (
+                          <button
+                            key={period}
+                            onClick={() => {
+                              setIncomeVisualPeriod(period);
+                              setSelectedIncomeVisualCategory(null); // Reset detail selection on period shift
+                            }}
+                            className={`px-3 py-1.5 text-[10px] uppercase tracking-wider font-extrabold rounded-lg transition-all cursor-pointer ${
+                              incomeVisualPeriod === period
+                                ? "bg-white dark:bg-[#151926] text-emerald-650 dark:text-emerald-400 shadow-sm"
+                                : "text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
+                            }`}
+                          >
+                            {period}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {incomeVisualCategorySummary.length === 0 ? (
+                      <div className="h-44 flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 space-y-2 border border-dashed border-stone-200 dark:border-[#21283b] rounded-xl bg-stone-50/40 dark:bg-[#11141e]/40">
+                        <Info className="w-8 h-8 opacity-40 text-emerald-500" />
+                        <p className="text-xs font-semibold">Umm, koi income entry nahi mila is <strong>{incomeVisualPeriod}</strong> filter me.</p>
+                        <p className="text-[10px] text-stone-450 dark:text-stone-550">Try adding some income transactions to see live charts.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                          
+                          {/* Categorized Income Progress Bars List */}
+                          <div className="md:col-span-7 space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-stone-450 dark:text-stone-550 mb-2 block font-mono">Income channels (Click row for transaction level details)</p>
+                            {incomeVisualCategorySummary.map((item, idx) => {
+                              const percentage = totalEarnedInIncomeVisualPeriod > 0 
+                                ? Math.round((item.value / totalEarnedInIncomeVisualPeriod) * 100) 
+                                : 0;
+                              const isCatSelected = (selectedIncomeVisualCategory || incomeVisualCategorySummary[0]?.name) === item.name;
+                              const catColor = getCategoryColor(item.name);
+                              
+                              return (
+                                <div 
+                                  key={idx} 
+                                  onClick={() => setSelectedIncomeVisualCategory(item.name)}
+                                  className={`p-3 rounded-xl border transition-all cursor-pointer select-none ${
+                                    isCatSelected 
+                                      ? "bg-emerald-50/55 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/60 shadow-xs" 
+                                      : "bg-stone-50/30 dark:bg-transparent hover:bg-stone-50 dark:hover:bg-[#1a2030]/65 border-transparent hover:border-stone-100 dark:hover:border-[#2c354e]/40"
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-center text-xs pb-1.5">
+                                    <span className="font-extrabold text-stone-800 dark:text-stone-100 flex items-center gap-1.5">
+                                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `var(--color-${catColor}-500, #10b981)` }}></span>
+                                      {item.name}
+                                    </span>
+                                    <span className="font-mono text-stone-900 dark:text-stone-200 font-extrabold text-[11px]">
+                                      {renderBalance(item.value)} <span className="opacity-60 text-[10px] font-normal">({percentage}%)</span>
+                                    </span>
+                                  </div>
+                                  <div className="w-full bg-stone-100 dark:bg-[#1e2538] h-2 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full rounded-full transition-all duration-300"
+                                      style={{ 
+                                        width: `${percentage}%`,
+                                        backgroundColor: `var(--color-${catColor}-500, #10b981)` 
+                                      }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* SVG Donut Visual Representation for Income */}
+                          <div className="md:col-span-5 flex flex-col items-center justify-center py-4 bg-stone-50/35 dark:bg-[#1a2030]/20 border border-stone-100 dark:border-[#21283b] rounded-2xl">
+                            <div className="relative flex items-center justify-center">
+                              <svg className="w-36 h-36 -rotate-90" viewBox="0 0 100 100">
+                                <circle
+                                  cx="50"
+                                  cy="50"
+                                  r="40"
+                                  fill="transparent"
+                                  stroke="#e2e8f0"
+                                  className="dark:stroke-[#252f4a]"
+                                  strokeWidth="12"
+                                />
+                                {(() => {
+                                  // Draw segmented rings for income
+                                  let accumulatedPercentage = 0;
+                                  return incomeVisualCategorySummary.slice(0, 5).map((item, index) => {
+                                    const percentage = totalEarnedInIncomeVisualPeriod > 0 ? (item.value / totalEarnedInIncomeVisualPeriod) * 100 : 0;
+                                    const strokeDash = `${percentage} ${100 - percentage}`;
+                                    const strokeOffset = 100 - accumulatedPercentage;
+                                    accumulatedPercentage += percentage;
+                                    const catColor = getCategoryColor(item.name);
+                                    
+                                    return (
+                                      <circle
+                                        key={index}
+                                        cx="50"
+                                        cy="50"
+                                        r="40"
+                                        fill="transparent"
+                                        stroke={`var(--color-${catColor}-500, #10b981)`}
+                                        strokeWidth="12"
+                                        strokeDasharray={strokeDash}
+                                        strokeDashoffset={strokeOffset}
+                                        pathLength="100"
+                                        className="transition-all duration-700 hover:stroke-width-16 cursor-pointer"
+                                        title={`${item.name}: ${percentage.toFixed(0)}%`}
+                                      />
+                                    );
+                                  });
+                                })()}
+                              </svg>
+                              <div className="absolute text-center">
+                                <p className="text-[9px] uppercase tracking-wider font-extrabold text-stone-400 dark:text-stone-500 font-mono leading-none mb-1">Earned</p>
+                                <p className="text-sm font-extrabold text-stone-900 dark:text-white font-mono leading-none">{renderBalance(totalEarnedInIncomeVisualPeriod)}</p>
+                              </div>
+                            </div>
+                            <div className="text-center mt-4 px-4 w-full">
+                              <p className="text-[10px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Current Filter</p>
+                              <p className="text-xs font-extrabold text-stone-900 dark:text-zinc-100 capitalize mt-1 border border-stone-200/60 dark:border-[#21283b] inline-block px-3 py-1 bg-white dark:bg-[#12141e] rounded-full">
+                                {incomeVisualPeriod} Income Total
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Income Drill down detailed breakdown with sub-items percentage */}
+                        {(() => {
+                          const currentCategoryName = selectedIncomeVisualCategory || (incomeVisualCategorySummary[0]?.name || "");
+                          if (!currentCategoryName) return null;
+                          
+                          const catTxs = incomeVisualPeriodTxs.filter(t => t.category === currentCategoryName);
+                          const catTotalEarned = catTxs.reduce((sum, t) => sum + t.amount, 0);
+                          const catColor = getCategoryColor(currentCategoryName);
+                          
+                          return (
+                            <div className="pt-5 border-t border-stone-200/60 dark:border-[#21283b] space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-50/50 dark:bg-[#1c2235]/30 p-3 rounded-xl border border-stone-100 dark:border-[#21283b]">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: `var(--color-${catColor}-500, #10b981)` }}></span>
+                                    <h4 className="font-display font-black text-stone-900 dark:text-white text-xs sm:text-sm uppercase tracking-wide">
+                                      {currentCategoryName} Income Ledger
+                                    </h4>
+                                  </div>
+                                  <p className="text-[10px] sm:text-[11px] text-stone-500 dark:text-stone-400 mt-1">
+                                    Transactions details during this <strong>{incomeVisualPeriod}</strong> window.
+                                  </p>
+                                </div>
+                                <div className="text-left sm:text-right">
+                                  <div className="text-xs font-mono font-black text-stone-900 dark:text-emerald-550 dark:text-emerald-400">
+                                    Subtotal: {renderBalance(catTotalEarned)}
+                                  </div>
+                                  <div className="text-[9px] text-stone-450 dark:text-stone-550 font-bold uppercase tracking-wider font-mono mt-0.5">
+                                    {totalEarnedInIncomeVisualPeriod > 0 ? Math.round((catTotalEarned / totalEarnedInIncomeVisualPeriod) * 100) : 0}% of all {incomeVisualPeriod} income
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="overflow-x-auto border border-stone-200/65 dark:border-[#263047] rounded-xl bg-white dark:bg-[#12141e]">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-stone-50/70 dark:bg-[#192031] text-stone-850 dark:text-stone-200 font-extrabold uppercase tracking-wider text-[9px] border-b border-stone-200/50 dark:border-[#21283b]">
+                                      <th className="py-2.5 px-3">Date</th>
+                                      <th className="py-2.5 px-3">Description</th>
+                                      <th className="py-2.5 px-3">Target Account / Channel</th>
+                                      <th className="py-2.5 px-3 text-right">Amount</th>
+                                      <th className="py-2.5 px-3 text-right">% of Sector</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-stone-100 dark:divide-[#1d2335]/70">
+                                    {catTxs.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={5} className="py-4 text-center text-stone-400 text-[11px]">
+                                          Is block me koi transactional records nahi mile.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      catTxs.map((t) => {
+                                        const accName = accounts.find(a => a.id === t.accountId)?.name || "External Channel";
+                                        const subSharePerc = catTotalEarned > 0 
+                                          ? Math.round((t.amount / catTotalEarned) * 100) 
+                                          : 0;
+                                        return (
+                                          <tr key={t.id} className="hover:bg-stone-50/40 dark:hover:bg-[#1c2235]/40 transition-colors">
+                                            <td className="py-2 px-3 font-mono text-stone-500 text-[10px]">{t.date}</td>
+                                            <td className="py-2 px-3 font-bold text-stone-850 dark:text-stone-200 max-w-[180px] sm:max-w-none truncate">{t.description}</td>
+                                            <td className="py-2 px-3 font-mono text-stone-600 dark:text-stone-400 text-[10px]">{accName}</td>
+                                            <td className="py-2 px-3 text-right font-black text-emerald-650 font-mono">{renderBalance(t.amount)}</td>
+                                            <td className="py-2 px-3 text-right font-black font-mono text-emerald-650 dark:text-emerald-400 text-[10px]/none">
+                                              <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-805 dark:text-emerald-300 px-1.5 py-0.5 rounded-sm">
                                                 {subSharePerc}%
                                               </span>
                                             </td>
