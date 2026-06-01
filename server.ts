@@ -141,11 +141,69 @@ Guidelines for parsing:
     const userPrompt = `User Message: "${message}"\n\nPlease respond according to the instructions in JSON format.`;
 
     const response = await client.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: "gemini-3.5-flash",
       contents: userPrompt,
       config: {
         systemInstruction,
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            responseText: { 
+              type: Type.STRING, 
+              description: "Short, warm response in Roman Urdu or English detailing exactly what action was taken." 
+            },
+            action: { 
+              type: Type.STRING, 
+              enum: ["add_transaction", "add_debt", "settle_debt", "schedule_expense", "confirm_schedule", "none"],
+              description: "Parsed action. Choose 'schedule_expense' to queue a future expense without deducting money today. Choose 'add_transaction' ONLY if it already happened or was instantly paid."
+            },
+            transaction: {
+              type: Type.OBJECT,
+              properties: {
+                type: { type: Type.STRING, enum: ["income", "expense", "transfer"] },
+                amount: { type: Type.NUMBER },
+                category: { type: Type.STRING },
+                description: { type: Type.STRING },
+                accountId: { type: Type.STRING },
+                toAccountId: { type: Type.STRING }
+              }
+            },
+            debt: {
+              type: Type.OBJECT,
+              properties: {
+                person: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                type: { type: Type.STRING, enum: ["receive", "pay"] },
+                notes: { type: Type.STRING },
+                date: { type: Type.STRING }
+              }
+            },
+            settleDebt: {
+              type: Type.OBJECT,
+              properties: {
+                person: { type: Type.STRING }
+              }
+            },
+            scheduledExpense: {
+              type: Type.OBJECT,
+              properties: {
+                accountId: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                category: { type: Type.STRING },
+                description: { type: Type.STRING },
+                date: { type: Type.STRING }
+              }
+            },
+            confirmSchedule: {
+              type: Type.OBJECT,
+              properties: {
+                description: { type: Type.STRING }
+              }
+            }
+          },
+          required: ["responseText", "action"]
+        }
       }
     });
 
