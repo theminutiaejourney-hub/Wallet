@@ -7,7 +7,7 @@ export const INITIAL_ACCOUNTS: Account[] = [
     type: "Bank",
     balance: 45000,
     accountNumber: "0201-010345",
-    color: "bg-emerald-850 border-emerald-700 text-white" // Islamic Green theme
+    color: "bg-emerald-900 border-emerald-700 text-white" // Islamic Green theme
   },
   {
     id: "ubl",

@@ -25,7 +25,9 @@ import {
   Sun,
   Moon,
   Users,
-  Check
+  Check,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 export default function App() {
@@ -43,6 +45,13 @@ export default function App() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "accounts" | "transactions" | "ai" | "debts">("overview");
   const [timeFilter, setTimeFilter] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
+
+  // New features state
+  const [visualPeriod, setVisualPeriod] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
+  const [selectedVisualCategory, setSelectedVisualCategory] = useState<string | null>(null);
+  const [hideBalances, setHideBalances] = useState<boolean>(() => {
+    return localStorage.getItem("wallet_hide_balances") === "true";
+  });
   
   // Debts and Dark Mode states
   const [debts, setDebts] = useState<Debt[]>(() => {
@@ -141,14 +150,20 @@ export default function App() {
     localStorage.setItem("wall_debts", JSON.stringify(debts));
   }, [debts]);
 
-  useEffect(() => {
+   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add("dark");
+      document.body.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
+      document.body.classList.remove("dark");
     }
     localStorage.setItem("wallet_dark_mode", String(darkMode));
   }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem("wallet_hide_balances", String(hideBalances));
+  }, [hideBalances]);
 
   // Auto scroll chat
   useEffect(() => {
@@ -157,6 +172,48 @@ export default function App() {
 
   // ---- calculation helpers ----
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+  // Sensitive Balance Hide helper
+  const renderBalance = (val: number) => {
+    if (hideBalances) return "••••••";
+    return formatPKR(val);
+  };
+
+  // Dedicated Spending Analysis calculations for active visualPeriod
+  const getVisualPeriodTransactions = () => {
+    let list = transactions.filter(t => t.type === "expense");
+    if (selectedAccountId) {
+      list = list.filter(t => t.accountId === selectedAccountId || t.toAccountId === selectedAccountId);
+    }
+    const now = new Date();
+    return list.filter(t => {
+      const txDateObj = new Date(t.date);
+      const diffTime = Math.abs(now.getTime() - txDateObj.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (visualPeriod === "daily") {
+        return diffDays <= 1 || t.date === now.toISOString().split("T")[0];
+      } else if (visualPeriod === "weekly") {
+        return diffDays <= 7;
+      } else if (visualPeriod === "monthly") {
+        return diffDays <= 30;
+      } else {
+        return diffDays <= 365;
+      }
+    });
+  };
+
+  const visualPeriodTxs = getVisualPeriodTransactions();
+
+  const visualCategorySummary = CATEGORIES.map(cat => {
+    const spent = visualPeriodTxs
+      .filter(t => t.category === cat)
+      .reduce((sum, t) => sum + t.amount, 0);
+    return { name: cat, value: spent };
+  }).filter(c => c.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const totalSpentInVisualPeriod = visualCategorySummary.reduce((sum, c) => sum + c.value, 0);
 
   // Filtering transactions by visual tab/time duration
   const getFilteredTransactions = () => {
@@ -680,6 +737,26 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Hide/Unhide Balance Toggle Button */}
+              <button
+                id="btn-hide-balances"
+                onClick={() => setHideBalances(!hideBalances)}
+                className="p-2 rounded-xl bg-stone-100 dark:bg-[#1e2538] text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-[#252f4a] transition-all flex items-center gap-1.5 cursor-pointer"
+                title={hideBalances ? "Show Balances" : "Hide Balances"}
+              >
+                {hideBalances ? (
+                  <>
+                    <Eye className="w-4 h-4 text-emerald-500" />
+                    <span className="text-[10px] font-bold hidden md:inline text-emerald-600 dark:text-emerald-400">Show Balances</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-4 h-4 text-stone-600 dark:text-stone-400" />
+                    <span className="text-[10px] font-bold hidden md:inline text-stone-600 dark:text-stone-400">Hide Balances</span>
+                  </>
+                )}
+              </button>
+
               {/* Dark Mode toggle button button */}
               <button
                 id="btn-dark-mode"
@@ -707,8 +784,17 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
             {/* 4 Multi-Account Stats Metrics Box */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
-                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Assets / Total Balance</p>
-                <p className="text-2xl font-bold font-display text-stone-900 dark:text-white tracking-tight">{formatPKR(totalBalance)}</p>
+                <div className="flex justify-between items-center mb-1">
+                  <p className="text-[10px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-wider font-mono">Net Assets / Total Balance</p>
+                  <button 
+                    onClick={() => setHideBalances(!hideBalances)} 
+                    className="text-stone-400 dark:text-stone-500 hover:text-stone-605 dark:hover:text-stone-300 transition-colors cursor-pointer"
+                    title={hideBalances ? "Show Balance" : "Hide Balance"}
+                  >
+                    {hideBalances ? <Eye className="w-3.5 h-3.5 text-emerald-500" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-2xl font-bold font-display text-stone-900 dark:text-white tracking-tight">{renderBalance(totalBalance)}</p>
                 <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
                   <span>Calculated across {accounts.length} account types</span>
@@ -717,7 +803,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
 
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
                 <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Income this Period ({timeFilter})</p>
-                <p className="text-2xl font-bold font-display text-blue-600 dark:text-blue-400 tracking-tight">{formatPKR(totalIncome)}</p>
+                <p className="text-2xl font-bold font-display text-blue-600 dark:text-blue-400 tracking-tight">{renderBalance(totalIncome)}</p>
                 <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-2 font-semibold font-mono">
                   Active earnings
                 </div>
@@ -725,7 +811,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
 
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
                 <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Total Expense ({timeFilter})</p>
-                <p className="text-2xl font-bold font-display text-red-500 dark:text-red-400 tracking-tight">{formatPKR(totalExpense)}</p>
+                <p className="text-2xl font-bold font-display text-red-500 dark:text-red-400 tracking-tight">{renderBalance(totalExpense)}</p>
                 <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2 font-mono">
                   {totalIncome > 0 ? `${Math.round((totalExpense / totalIncome) * 100)}% of income used` : "No income recorded"}
                 </div>
@@ -734,7 +820,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
                 <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Period Savings</p>
                 <p className={`text-2xl font-bold font-display tracking-tight ${netSavings >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-yellow-600 dark:text-yellow-500"}`}>
-                  {formatPKR(netSavings)}
+                  {renderBalance(netSavings)}
                 </p>
                 <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2">
                   Target threshold active
@@ -826,7 +912,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className={`text-xs font-extrabold font-mono ${isSelected ? "text-white" : "text-stone-900 dark:text-stone-100"}`}>{formatPKR(acc.balance)}</p>
+                              <p className={`text-xs font-extrabold font-mono ${isSelected ? "text-white" : "text-stone-900 dark:text-stone-100"}`}>{renderBalance(acc.balance)}</p>
                               <span className={`text-[8px] uppercase font-bold ${isSelected ? "text-stone-300" : "text-stone-400 dark:text-stone-500"}`}>{acc.type}</span>
                             </div>
                           </div>
@@ -848,41 +934,82 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
 
                 {/* Right: Spending Chart or interactive SVG Visualizer */}
                 <div className="lg:col-span-8 space-y-4">
-                  <div className="bg-white p-6 rounded-2xl border border-[#E5E7EB] shadow-xs">
-                    <div className="flex justify-between items-center mb-6">
+                  <div className="bg-white dark:bg-[#151926] p-6 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs transition-colors">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                       <div>
-                        <h3 className="text-sm font-bold text-stone-800">Visual Expense Analysis (By category)</h3>
-                        <p className="text-xs text-stone-500">Categorized Pakistan wallet streams</p>
+                        <h3 className="text-sm font-bold text-stone-850 dark:text-white flex items-center gap-2">
+                          <span>Visual Expense Analysis (By category)</span>
+                        </h3>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 font-medium">Interactive live budget drill-down by active duration</p>
                       </div>
-                      <span className="text-xs font-mono font-bold text-stone-600 bg-stone-100 px-2.5 py-1 rounded-full">
-                        {categorySummary.length} Active spending sectors
-                      </span>
+
+                      {/* Period Selection Controls local to the chart */}
+                      <div className="flex bg-stone-100 dark:bg-[#1f2638] p-1 rounded-xl self-start sm:self-auto border border-stone-200/50 dark:border-[#2c354e]">
+                        {(["daily", "weekly", "monthly", "yearly"] as const).map((period) => (
+                          <button
+                            key={period}
+                            onClick={() => {
+                              setVisualPeriod(period);
+                              setSelectedVisualCategory(null); // Reset detail selection on period shift
+                            }}
+                            className={`px-3 py-1.5 text-[10px] uppercase tracking-wider font-extrabold rounded-lg transition-all cursor-pointer ${
+                              visualPeriod === period
+                                ? "bg-white dark:bg-[#151926] text-blue-650 dark:text-blue-400 shadow-sm"
+                                : "text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
+                            }`}
+                          >
+                            {period}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    {categorySummary.length === 0 ? (
-                      <div className="h-44 flex flex-col items-center justify-center text-stone-400 space-y-2 border border-dashed border-stone-200 rounded-xl">
-                        <Info className="w-8 h-8 opacity-40" />
-                        <p className="text-xs">Umm, koi transaction nahi mili is time filter me.</p>
+                    {visualCategorySummary.length === 0 ? (
+                      <div className="h-44 flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 space-y-2 border border-dashed border-stone-200 dark:border-[#21283b] rounded-xl bg-stone-55/40 dark:bg-[#11141e]/40">
+                        <Info className="w-8 h-8 opacity-40 text-blue-500" />
+                        <p className="text-xs font-semibold">Umm, koi expense nahi mila is <strong>{visualPeriod}</strong> filter me.</p>
+                        <p className="text-[10px] text-stone-450 dark:text-stone-500">Try entering some expense transactions to see live charts.</p>
                       </div>
                     ) : (
-                      <div className="space-y-4">
-                        {/* Interactive simple CSS layout bar graph */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            {categorySummary.map((item, idx) => {
-                              const percentage = totalSpentOnCategories > 0 
-                                ? Math.round((item.value / totalSpentOnCategories) * 100) 
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                          
+                          {/* Categorized Progress Bars List */}
+                          <div className="md:col-span-7 space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-stone-450 dark:text-stone-500 mb-2 block">Active sectors (Click row for transaction level details)</p>
+                            {visualCategorySummary.map((item, idx) => {
+                              const percentage = totalSpentInVisualPeriod > 0 
+                                ? Math.round((item.value / totalSpentInVisualPeriod) * 100) 
                                 : 0;
+                              const isCatSelected = (selectedVisualCategory || visualCategorySummary[0]?.name) === item.name;
+                              const catColor = getCategoryColor(item.name);
+                              
                               return (
-                                <div key={idx} className="space-y-1">
-                                  <div className="flex justify-between text-xs">
-                                    <span className="font-semibold text-stone-700">{item.name}</span>
-                                    <span className="font-mono text-stone-600 font-medium">{formatPKR(item.value)} ({percentage}%)</span>
+                                <div 
+                                  key={idx} 
+                                  onClick={() => setSelectedVisualCategory(item.name)}
+                                  className={`p-3 rounded-xl border transition-all cursor-pointer select-none ${
+                                    isCatSelected 
+                                      ? "bg-blue-50/55 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/60 shadow-xs" 
+                                      : "bg-stone-50/30 dark:bg-transparent hover:bg-stone-50 dark:hover:bg-[#1a2030]/65 border-transparent hover:border-stone-100 dark:hover:border-[#2c354e]/40"
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-center text-xs pb-1.5">
+                                    <span className="font-extrabold text-stone-800 dark:text-stone-100 flex items-center gap-1.5">
+                                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `var(--color-${catColor}-500, #3b82f6)` }}></span>
+                                      {item.name}
+                                    </span>
+                                    <span className="font-mono text-stone-900 dark:text-stone-200 font-extrabold text-[11px]">
+                                      {renderBalance(item.value)} <span className="opacity-60 text-[10px] font-normal">({percentage}%)</span>
+                                    </span>
                                   </div>
-                                  <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden">
+                                  <div className="w-full bg-stone-100 dark:bg-[#1e2538] h-2 rounded-full overflow-hidden">
                                     <div 
-                                      className={`h-full bg-blue-600 rounded-full`}
-                                      style={{ width: `${percentage}%` }}
+                                      className="h-full rounded-full transition-all duration-300"
+                                      style={{ 
+                                        width: `${percentage}%`,
+                                        backgroundColor: `var(--color-${catColor}-500, #3b82f6)` 
+                                      }}
                                     ></div>
                                   </div>
                                 </div>
@@ -890,90 +1017,194 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                             })}
                           </div>
 
-                          {/* SVG Donut Visual representation */}
-                          <div className="flex flex-col items-center justify-center pt-2">
-                            <svg className="w-36 h-36" viewBox="0 0 100 100">
-                              <circle
-                                cx="50"
-                                cy="50"
-                                r="40"
-                                fill="transparent"
-                                stroke="#f5f5f4"
-                                strokeWidth="12"
-                              />
-                              {/* Overlay simple dynamic arc or nice presentation */}
-                              <circle
-                                cx="50"
-                                cy="50"
-                                r="40"
-                                fill="transparent"
-                                stroke="#2563eb"
-                                strokeWidth="12"
-                                strokeDasharray="180 251"
-                                strokeDashoffset="-15"
-                                className="transition-all duration-1000"
-                              />
-                            </svg>
-                            <div className="text-center mt-2">
-                              <p className="text-[11px] font-bold text-stone-700">Total Spent Analyzed</p>
-                              <p className="text-sm font-bold text-blue-600 font-mono">{formatPKR(totalSpentOnCategories)}</p>
+                          {/* SVG Donut Visual Representation */}
+                          <div className="md:col-span-5 flex flex-col items-center justify-center py-4 bg-stone-55/35 dark:bg-[#1a2030]/20 border border-stone-100 dark:border-[#21283b] rounded-2xl">
+                            <div className="relative flex items-center justify-center">
+                              <svg className="w-36 h-36 -rotate-90" viewBox="0 0 100 100">
+                                <circle
+                                  cx="50"
+                                  cy="50"
+                                  r="40"
+                                  fill="transparent"
+                                  stroke="#e2e8f0"
+                                  className="dark:stroke-[#252f4a]"
+                                  strokeWidth="12"
+                                />
+                                {(() => {
+                                  // Draw segmented rings
+                                  let accumulatedPercentage = 0;
+                                  return visualCategorySummary.slice(0, 5).map((item, index) => {
+                                    const percentage = totalSpentInVisualPeriod > 0 ? (item.value / totalSpentInVisualPeriod) * 100 : 0;
+                                    const strokeDash = `${percentage} ${100 - percentage}`;
+                                    const strokeOffset = 100 - accumulatedPercentage;
+                                    accumulatedPercentage += percentage;
+                                    const catColor = getCategoryColor(item.name);
+                                    
+                                    return (
+                                      <circle
+                                        key={index}
+                                        cx="50"
+                                        cy="50"
+                                        r="40"
+                                        fill="transparent"
+                                        stroke={`var(--color-${catColor}-500, #3b82f6)`}
+                                        strokeWidth="12"
+                                        strokeDasharray={strokeDash}
+                                        strokeDashoffset={strokeOffset}
+                                        pathLength="100"
+                                        className="transition-all duration-700 hover:stroke-width-16 cursor-pointer"
+                                        title={`${item.name}: ${percentage.toFixed(0)}%`}
+                                      />
+                                    );
+                                  });
+                                })()}
+                              </svg>
+                              <div className="absolute text-center">
+                                <p className="text-[9px] uppercase tracking-wider font-extrabold text-stone-400 dark:text-stone-500 font-mono leading-none mb-1">Spent</p>
+                                <p className="text-sm font-extrabold text-stone-900 dark:text-white font-mono leading-none">{renderBalance(totalSpentInVisualPeriod)}</p>
+                              </div>
+                            </div>
+                            <div className="text-center mt-4 px-4 w-full">
+                              <p className="text-[10px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest font-mono">Current Filter</p>
+                              <p className="text-xs font-extrabold text-stone-900 dark:text-zinc-100 capitalize mt-1 border border-stone-200/60 dark:border-[#21283b] inline-block px-3 py-1 bg-white dark:bg-[#12141e] rounded-full">
+                                {visualPeriod} Total Spent
+                              </p>
                             </div>
                           </div>
                         </div>
+
+                        {/* Drill down detailed breakdown with sub-items percentage */}
+                        {(() => {
+                          const currentCategoryName = selectedVisualCategory || (visualCategorySummary[0]?.name || "");
+                          if (!currentCategoryName) return null;
+                          
+                          const catTxs = visualPeriodTxs.filter(t => t.category === currentCategoryName);
+                          const catTotalSpent = catTxs.reduce((sum, t) => sum + t.amount, 0);
+                          const catColor = getCategoryColor(currentCategoryName);
+                          
+                          return (
+                            <div className="pt-5 border-t border-stone-200/60 dark:border-[#21283b] space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-50/50 dark:bg-[#1c2235]/30 p-3 rounded-xl border border-stone-100 dark:border-[#21283b]">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: `var(--color-${catColor}-500, #3b82f6)` }}></span>
+                                    <h4 className="font-display font-black text-stone-900 dark:text-white text-xs sm:text-sm uppercase tracking-wide">
+                                      {currentCategoryName} Category Journal
+                                    </h4>
+                                  </div>
+                                  <p className="text-[10px] sm:text-[11px] text-stone-500 dark:text-stone-400 mt-1">
+                                    Transactions details during this <strong>{visualPeriod}</strong> window.
+                                  </p>
+                                </div>
+                                <div className="text-left sm:text-right">
+                                  <div className="text-xs font-mono font-black text-stone-900 dark:text-blue-300">
+                                    Subtotal: {renderBalance(catTotalSpent)}
+                                  </div>
+                                  <div className="text-[9px] text-stone-450 dark:text-stone-550 font-bold uppercase tracking-wider font-mono mt-0.5">
+                                    {totalSpentInVisualPeriod > 0 ? Math.round((catTotalSpent / totalSpentInVisualPeriod) * 100) : 0}% of all {visualPeriod} expenses
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="overflow-x-auto border border-stone-200/65 dark:border-[#263047] rounded-xl bg-white dark:bg-[#12141e]">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-stone-50/70 dark:bg-[#192031] text-stone-850 dark:text-stone-200 font-extrabold uppercase tracking-wider text-[9px] border-b border-stone-200/50 dark:border-[#21283b]">
+                                      <th className="py-2.5 px-3">Date</th>
+                                      <th className="py-2.5 px-3">Description</th>
+                                      <th className="py-2.5 px-3">Source Channel</th>
+                                      <th className="py-2.5 px-3 text-right">Amount</th>
+                                      <th className="py-2.5 px-3 text-right">% of Sector</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-stone-100 dark:divide-[#1d2335]/70">
+                                    {catTxs.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={5} className="py-4 text-center text-stone-400 text-[11px]">
+                                          Is block me koi transactional records nahi mile.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      catTxs.map((t) => {
+                                        const accName = accounts.find(a => a.id === t.accountId)?.name || "External Channel";
+                                        const subSharePerc = catTotalSpent > 0 
+                                          ? Math.round((t.amount / catTotalSpent) * 100) 
+                                          : 0;
+                                        return (
+                                          <tr key={t.id} className="hover:bg-stone-55/40 dark:hover:bg-[#1c2235]/40 transition-colors">
+                                            <td className="py-2 px-3 font-mono text-stone-500 text-[10px]">{t.date}</td>
+                                            <td className="py-2 px-3 font-bold text-stone-850 dark:text-stone-200 max-w-[180px] sm:max-w-none truncate">{t.description}</td>
+                                            <td className="py-2 px-3 font-mono text-stone-600 dark:text-stone-400 text-[10px]">{accName}</td>
+                                            <td className="py-2 px-3 text-right font-black text-red-650 font-mono">{renderBalance(t.amount)}</td>
+                                            <td className="py-2 px-3 text-right font-black font-mono text-blue-650 dark:text-blue-400 text-[10px]/none">
+                                              <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-805 dark:text-blue-300 px-1.5 py-0.5 rounded-sm">
+                                                {subSharePerc}%
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
 
                   {/* Quick-look at the recent transactions log */}
-                  <div className="bg-white p-5 rounded-2xl border border-[#E5E7EB] shadow-xs">
+                  <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs transition-colors">
                     <div className="flex justify-between items-center mb-3">
-                      <h3 className="text-xs uppercase font-extrabold tracking-widest text-stone-400 font-mono">Recent Records ({filteredTxs.length})</h3>
+                      <h3 className="text-xs uppercase font-extrabold tracking-widest text-stone-400 dark:text-stone-550 font-mono">Recent Records ({filteredTxs.length})</h3>
                       <button 
                         onClick={() => setActiveTab("transactions")}
-                        className="text-xs text-stone-500 font-semibold hover:text-stone-900"
+                        className="text-xs text-stone-500 dark:text-stone-400 font-semibold hover:text-stone-900 dark:hover:text-white transition-all hover:underline"
                       >
                         View Statement
                       </button>
                     </div>
 
-                    <div className="divide-y divide-stone-100 max-h-80 overflow-y-auto">
+                    <div className="divide-y divide-stone-100 dark:divide-[#21283b] max-h-80 overflow-y-auto">
                       {filteredTxs.length === 0 ? (
-                        <p className="text-xs text-stone-400 py-6 text-center">Is account or duration me koi records nahi hain.</p>
+                        <p className="text-xs text-stone-400 dark:text-stone-500 py-6 text-center">Is account or duration me koi records nahi hain.</p>
                       ) : (
                         filteredTxs.slice(0, 5).map(t => {
                           const accName = accounts.find(a => a.id === t.accountId)?.name || "Wallet";
                           const toAccName = t.toAccountId ? (accounts.find(a => a.id === t.toAccountId)?.name || "Target Account") : "";
                           return (
-                            <div key={t.id} className="py-3.5 flex items-center justify-between hover:bg-stone-50 rounded-xl px-2 transition-colors">
+                            <div key={t.id} className="py-3.5 flex items-center justify-between hover:bg-stone-50 dark:hover:bg-[#1a2030]/50 rounded-xl px-2 transition-colors">
                               <div className="flex items-center gap-3">
                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                                   t.type === "income" 
-                                    ? "bg-emerald-55 text-emerald-800" 
+                                    ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-450" 
                                     : t.type === "expense" 
-                                      ? "bg-red-50 text-red-800"
-                                      : "bg-amber-100 text-amber-800"
+                                      ? "bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-450"
+                                      : "bg-amber-50 dark:bg-amber-950/30 text-amber-805 dark:text-amber-450"
                                 }`}>
                                   {t.type === "income" && <ArrowDownLeft className="w-4 h-4" />}
                                   {t.type === "expense" && <ArrowUpRight className="w-4 h-4" />}
                                   {t.type === "transfer" && <ArrowLeftRight className="w-4 h-4" />}
                                 </div>
-                                <div>
-                                  <p className="text-xs font-bold text-stone-800 leading-tight">{t.description}</p>
-                                  <span className="text-[9px] text-stone-500 flex items-center gap-1">
-                                    <span className="font-semibold text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded-sm">{t.category}</span>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-stone-880 dark:text-stone-150 leading-tight truncate">{t.description}</p>
+                                  <span className="text-[9px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold text-blue-600 dark:text-blue-400 uppercase bg-blue-55/35 dark:bg-blue-950/50 px-1.5 py-0.5 rounded-sm text-[8px] tracking-wider">{t.category}</span>
                                     <span>•</span>
-                                    <span>{accName} {t.type === "transfer" && `→ ${toAccName}`}</span>
+                                    <span className="truncate">{accName} {t.type === "transfer" && `→ ${toAccName}`}</span>
                                   </span>
                                 </div>
                               </div>
 
-                              <div className="text-right">
+                              <div className="text-right shrink-0">
                                 <p className={`text-xs font-bold font-mono ${
-                                  t.type === "income" ? "text-emerald-700" : t.type === "expense" ? "text-red-700" : "text-amber-700"
+                                  t.type === "income" ? "text-emerald-700 dark:text-emerald-400" : t.type === "expense" ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"
                                 }`}>
-                                  {t.type === "income" ? "+" : "-"} {formatPKR(t.amount)}
+                                  {t.type === "income" ? "+" : "-"} {renderBalance(t.amount)}
                                 </p>
-                                <span className="text-[9px] text-stone-400">{t.date}</span>
+                                <span className="text-[9px] text-stone-400 dark:text-stone-500 font-mono">{t.date}</span>
                               </div>
                             </div>
                           );
@@ -1083,18 +1314,18 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                   </div>
                                   <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
                                     acc.type === "Bank" 
-                                      ? "bg-blue-105 dark:bg-blue-950/50 text-blue-805 dark:text-blue-300" 
+                                      ? "bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300" 
                                       : acc.type === "Outside of Wallet"
-                                        ? "bg-purple-105 dark:bg-purple-950/50 text-purple-805 dark:text-purple-300"
-                                        : "bg-emerald-105 dark:bg-emerald-950/50 text-emerald-855 dark:text-emerald-300"
+                                        ? "bg-purple-100 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300"
+                                        : "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300"
                                   }`}>
                                     {acc.type}
                                   </span>
                                 </div>
-
+ 
                                 <div className="my-4">
                                   <span className="text-[10px] text-stone-400 dark:text-stone-500 uppercase font-bold tracking-wider block">Current Balance</span>
-                                  <p className="text-xl font-extrabold text-stone-950 dark:text-emerald-400 font-mono leading-none mt-1">{formatPKR(acc.balance)}</p>
+                                  <p className="text-xl font-extrabold text-stone-950 dark:text-emerald-400 font-mono leading-none mt-1">{renderBalance(acc.balance)}</p>
                                 </div>
                               </div>
 
@@ -1199,7 +1430,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                               <td className={`py-3 px-4 text-right font-bold font-mono ${
                                 t.type === "income" ? "text-emerald-700 dark:text-emerald-400" : t.type === "expense" ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"
                               }`}>
-                                {t.type === "income" ? "+" : "-"} {formatPKR(t.amount)}
+                                {t.type === "income" ? "+" : "-"} {renderBalance(t.amount)}
                               </td>
                               <td className="py-3 px-4 text-center">
                                 <button
@@ -1936,52 +2167,52 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
       {/* TARGETED PLAN ADVISOR DRAWER / LIGHTBOX */}
       {planOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/45 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl w-full max-w-lg border border-stone-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50 shrink-0">
+          <div className="bg-white dark:bg-[#151926] rounded-2xl w-full max-w-lg border border-stone-200 dark:border-[#21283b] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-colors">
+            <div className="px-6 py-4 border-b border-stone-100 dark:border-[#21283b] flex justify-between items-center bg-stone-50 dark:bg-[#131622] shrink-0">
               <div className="flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-display font-bold text-stone-900 text-sm">Personalised saving Plan calculation</h3>
+                <Lightbulb className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="font-display font-bold text-stone-900 dark:text-white text-sm">Personalised saving Plan calculation</h3>
               </div>
               <button 
                 onClick={() => setPlanOpen(false)}
-                className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 p-1.5 rounded-lg transition-all"
+                className="text-stone-400 dark:text-stone-300 hover:text-stone-700 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-[#1e2538] p-1.5 rounded-lg transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="p-6 space-y-4 overflow-y-auto">
-              <div className="bg-stone-55 p-4 rounded-xl space-y-2 border border-stone-200">
-                <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wide block">Current Context</span>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>Net Assets: <strong className="text-stone-900">{formatPKR(totalBalance)}</strong></div>
-                  <div>Period savings: <span className="text-emerald-700 font-bold">{formatPKR(netSavings)}</span></div>
-                  <div>Target Amount: <span className="font-bold">Rs. {savingTarget} PKR</span></div>
-                  <div>Target Duration: <span className="font-bold">{savingTargetDuration} Months</span></div>
+              <div className="bg-stone-50 dark:bg-[#131622] p-4 rounded-xl space-y-2 border border-stone-200 dark:border-[#21283b]">
+                <span className="text-[10px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-wide block">Current Context</span>
+                <div className="grid grid-cols-2 gap-2 text-xs text-stone-650 dark:text-stone-300">
+                  <div>Net Assets: <strong className="text-stone-900 dark:text-white">{formatPKR(totalBalance)}</strong></div>
+                  <div>Period savings: <span className="text-emerald-700 dark:text-emerald-400 font-bold">{formatPKR(netSavings)}</span></div>
+                  <div>Target Amount: <span className="font-bold text-stone-900 dark:text-white">Rs. {savingTarget} PKR</span></div>
+                  <div>Target Duration: <span className="font-bold text-stone-900 dark:text-white">{savingTargetDuration} Months</span></div>
                 </div>
               </div>
 
               {customPlanReply ? (
                 <div className="space-y-3">
-                  <span className="text-[10px] text-emerald-600 bg-emerald-50 font-bold px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/45 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full">
                     ADVISOR PATH GENERATED BY GEMINI
                   </span>
-                  <div className="text-xs text-stone-700 leading-relaxed whitespace-pre-line bg-stone-50 p-4 border border-stone-100 rounded-xl">
+                  <div className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed whitespace-pre-line bg-stone-50 dark:bg-[#131622] p-4 border border-stone-100 dark:border-[#21283b] rounded-xl">
                     {customPlanReply}
                   </div>
                 </div>
               ) : (
                 <div className="py-12 flex flex-col items-center justify-center space-y-3">
-                  <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs text-stone-500 font-medium">Gemini is researching local mutual fund indices & formulating your savings rules...</p>
+                  <div className="w-6 h-6 border-2 border-emerald-605 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 font-medium">Gemini is researching local mutual fund indices & formulating your savings rules...</p>
                 </div>
               )}
             </div>
 
-            <div className="p-4 border-t border-stone-100 bg-stone-50 flex justify-end shrink-0">
+            <div className="p-4 border-t border-stone-100 dark:border-[#21283b] bg-stone-50 dark:bg-[#131622] flex justify-end shrink-0">
               <button 
                 onClick={() => setPlanOpen(false)}
-                className="px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-stone-850 font-bold text-xs"
+                className="px-4 py-2 bg-stone-900 dark:bg-zinc-800 hover:bg-stone-850 dark:hover:bg-[#252f4a] text-white rounded-lg font-bold text-xs transition-colors"
               >
                 Close Plan View
               </button>
