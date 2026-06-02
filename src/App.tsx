@@ -2,6 +2,23 @@ import React, { useState, useEffect, useRef } from "react";
 import { Account, Transaction, ChatMessage, Debt, ScheduledExpense } from "./types";
 import { INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, CATEGORIES, formatPKR, getCategoryColor } from "./data";
 import { 
+  db, 
+  auth, 
+  signInWithGoogle, 
+  logout, 
+  handleFirestoreError, 
+  OperationType 
+} from "./firebase";
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  deleteDoc 
+} from "firebase/firestore";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { 
   Plus, 
   Trash2, 
   ArrowUpRight, 
@@ -32,6 +49,11 @@ import {
 } from "lucide-react";
 
 export default function App() {
+  // ---- user authentication & cloud sync state ----
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const isSyncingFromCloud = useRef(false);
+
   // ---- state management ----
   const [accounts, setAccounts] = useState<Account[]>(() => {
     const saved = localStorage.getItem("wall_accounts");
@@ -174,6 +196,209 @@ export default function App() {
   const [savingTargetDuration, setSavingTargetDuration] = useState("6");
   const [customPlanReply, setCustomPlanReply] = useState<string | null>(null);
 
+  // ---- cloud & firebase sync helper functions ----
+  const syncAccount = async (acc: Account) => {
+    if (!auth.currentUser) return;
+    try {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "accounts", acc.id), {
+        ...acc,
+        userId: auth.currentUser.uid,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/accounts/${acc.id}`);
+    }
+  };
+
+  const removeAccount = async (id: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await deleteDoc(doc(db, "users", auth.currentUser.uid, "accounts", id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${auth.currentUser.uid}/accounts/${id}`);
+    }
+  };
+
+  const syncTransaction = async (tx: Transaction) => {
+    if (!auth.currentUser) return;
+    try {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "transactions", tx.id), {
+        ...tx,
+        userId: auth.currentUser.uid,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/transactions/${tx.id}`);
+    }
+  };
+
+  const removeTransaction = async (id: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await deleteDoc(doc(db, "users", auth.currentUser.uid, "transactions", id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${auth.currentUser.uid}/transactions/${id}`);
+    }
+  };
+
+  const syncDebt = async (d: Debt) => {
+    if (!auth.currentUser) return;
+    try {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "debts", d.id), {
+        ...d,
+        userId: auth.currentUser.uid,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/debts/${d.id}`);
+    }
+  };
+
+  const removeDebt = async (id: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await deleteDoc(doc(db, "users", auth.currentUser.uid, "debts", id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${auth.currentUser.uid}/debts/${id}`);
+    }
+  };
+
+  const syncScheduledExpense = async (se: ScheduledExpense) => {
+    if (!auth.currentUser) return;
+    try {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "scheduledExpenses", se.id), {
+        ...se,
+        userId: auth.currentUser.uid,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/scheduledExpenses/${se.id}`);
+    }
+  };
+
+  const removeScheduledExpense = async (id: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await deleteDoc(doc(db, "users", auth.currentUser.uid, "scheduledExpenses", id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${auth.currentUser.uid}/scheduledExpenses/${id}`);
+    }
+  };
+
+  const syncPreferences = async (dark: boolean, hide: boolean) => {
+    if (!auth.currentUser) return;
+    try {
+      await setDoc(doc(db, "users", auth.currentUser.uid), {
+        uid: auth.currentUser.uid,
+        email: auth.currentUser.email,
+        displayName: auth.currentUser.displayName,
+        darkMode: dark,
+        hideBalances: hide,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}`);
+    }
+  };
+
+  // ---- auth listener and firestore pull flow ----
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthLoading(false);
+      
+      if (firebaseUser) {
+        isSyncingFromCloud.current = true;
+        try {
+          const uid = firebaseUser.uid;
+          
+          // Load User profile settings
+          let profileDark = darkMode;
+          let profileHide = hideBalances;
+          const userDoc = await getDoc(doc(db, "users", uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data.darkMode !== undefined) {
+              setDarkMode(data.darkMode);
+              profileDark = data.darkMode;
+            }
+            if (data.hideBalances !== undefined) {
+              setHideBalances(data.hideBalances);
+              profileHide = data.hideBalances;
+            }
+          } else {
+            await setDoc(doc(db, "users", uid), {
+              uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+              darkMode,
+              hideBalances,
+              updatedAt: new Date().toISOString()
+            });
+          }
+
+          // Fetch Accounts
+          const accsSnap = await getDocs(collection(db, "users", uid, "accounts"));
+          const cloudAccounts: Account[] = [];
+          accsSnap.forEach(docSnap => {
+            cloudAccounts.push(docSnap.data() as Account);
+          });
+
+          // Fetch Transactions
+          const txSnap = await getDocs(collection(db, "users", uid, "transactions"));
+          const cloudTxs: Transaction[] = [];
+          txSnap.forEach(docSnap => {
+            cloudTxs.push(docSnap.data() as Transaction);
+          });
+
+          // Fetch Debts
+          const debtsSnap = await getDocs(collection(db, "users", uid, "debts"));
+          const cloudDebts: Debt[] = [];
+          debtsSnap.forEach(docSnap => {
+            cloudDebts.push(docSnap.data() as Debt);
+          });
+
+          // Fetch ScheduledExpenses
+          const schedSnap = await getDocs(collection(db, "users", uid, "scheduledExpenses"));
+          const cloudScheds: ScheduledExpense[] = [];
+          schedSnap.forEach(docSnap => {
+            cloudScheds.push(docSnap.data() as ScheduledExpense);
+          });
+
+          // If cloud has empty setup, import local data automatically to initialize
+          if (cloudAccounts.length === 0 && accounts.length > 0) {
+            console.log("[Setup] Backing up local state to secure cloud...");
+            for (const acc of accounts) {
+              await setDoc(doc(db, "users", uid, "accounts", acc.id), { ...acc, userId: uid });
+            }
+            for (const tx of transactions) {
+              await setDoc(doc(db, "users", uid, "transactions", tx.id), { ...tx, userId: uid });
+            }
+            for (const d of debts) {
+              await setDoc(doc(db, "users", uid, "debts", d.id), { ...d, userId: uid });
+            }
+            for (const s of scheduledExpenses) {
+              await setDoc(doc(db, "users", uid, "scheduledExpenses", s.id), { ...s, userId: uid });
+            }
+          } else {
+            if (cloudAccounts.length > 0) {
+              setAccounts(cloudAccounts);
+            }
+            setTransactions(cloudTxs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+            setDebts(cloudDebts);
+            setScheduledExpenses(cloudScheds);
+          }
+        } catch (err) {
+          console.error("Authentication Firestore load failure:", err);
+        } finally {
+          isSyncingFromCloud.current = false;
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Sync to local storage
   useEffect(() => {
     localStorage.setItem("wall_accounts", JSON.stringify(accounts));
@@ -200,10 +425,16 @@ export default function App() {
       document.body.classList.remove("dark");
     }
     localStorage.setItem("wallet_dark_mode", String(darkMode));
+    if (user) {
+      syncPreferences(darkMode, hideBalances);
+    }
   }, [darkMode]);
 
   useEffect(() => {
     localStorage.setItem("wallet_hide_balances", String(hideBalances));
+    if (user) {
+      syncPreferences(darkMode, hideBalances);
+    }
   }, [hideBalances]);
 
   // Auto scroll chat
@@ -371,6 +602,10 @@ export default function App() {
     setTransactions([newTx, ...transactions]);
     setIsAddTxOpen(false);
 
+    // Sync to Cloud
+    updatedAccounts.forEach(syncAccount);
+    syncTransaction(newTx);
+
     // reset fields
     setTxAmount("");
     setTxDescription("");
@@ -402,6 +637,10 @@ export default function App() {
 
     setAccounts(updatedAccounts);
     setTransactions(transactions.filter(t => t.id !== id));
+
+    // Sync to Cloud
+    updatedAccounts.forEach(syncAccount);
+    removeTransaction(id);
   };
 
   // Scheduled Expense Handlers
@@ -424,6 +663,9 @@ export default function App() {
     setIsAddSchedOpen(false);
     setSchedAmount("");
     setSchedDescription("");
+
+    // Sync to Cloud
+    syncScheduledExpense(newSched);
   };
 
   const confirmScheduledExpense = (id: string) => {
@@ -453,10 +695,18 @@ export default function App() {
     setAccounts(updatedAccounts);
     setTransactions(prev => [newTx, ...prev]);
     setScheduledExpenses(prev => prev.filter(s => s.id !== id));
+
+    // Sync to Cloud
+    updatedAccounts.forEach(syncAccount);
+    syncTransaction(newTx);
+    removeScheduledExpense(id);
   };
 
   const deleteScheduledExpense = (id: string) => {
     setScheduledExpenses(prev => prev.filter(s => s.id !== id));
+
+    // Sync to Cloud
+    removeScheduledExpense(id);
   };
 
   // Add individual Bank Account custom
@@ -468,7 +718,7 @@ export default function App() {
     const tailwindColors = [
       "bg-stone-800 border-stone-700 text-stone-100",
       "bg-indigo-900 border-indigo-950 text-indigo-50",
-      "bg-emerald-900 border-emerald-950 text-emerald-50",
+      "bg-emerald-950 border-emerald-750 text-emerald-100",
       "text-stone-900 bg-white border-stone-200"
     ];
 
@@ -488,6 +738,9 @@ export default function App() {
     setNewAccName("");
     setNewAccBalance("");
     setNewAccNumber("");
+
+    // Sync to Cloud
+    syncAccount(newAcc);
   };
 
   // Save changes to an existing account
@@ -497,13 +750,16 @@ export default function App() {
 
     setAccounts(accounts.map(acc => {
       if (acc.id === id) {
-        return {
+        const u = {
           ...acc,
           name: editAccName,
           type: editAccType,
           balance: balNum,
           accountNumber: editAccNumber || "Personal Core"
         };
+        // Sync to Cloud
+        syncAccount(u);
+        return u;
       }
       return acc;
     }));
@@ -522,6 +778,9 @@ export default function App() {
         setTxAccountId(remaining[0].id);
       }
     }
+
+    // Sync to Cloud
+    removeAccount(id);
   };
 
   // AI chat callout
@@ -621,6 +880,10 @@ export default function App() {
 
           setAccounts(updated);
           setTransactions(prev => [newParsedTx, ...prev]);
+
+          // Sync to Cloud
+          updated.forEach(syncAccount);
+          syncTransaction(newParsedTx);
         }
       } else if (data.action === "add_debt" && data.debt) {
         const d = data.debt;
@@ -636,13 +899,19 @@ export default function App() {
             status: "pending"
           };
           setDebts(prev => [newDebt, ...prev]);
+
+          // Sync to Cloud
+          syncDebt(newDebt);
         }
       } else if (data.action === "settle_debt" && data.settleDebt) {
         const s = data.settleDebt;
         if (s.person) {
           setDebts(prev => prev.map(db => {
             if (db.person.toLowerCase().includes(s.person.toLowerCase()) && db.status === "pending") {
-              return { ...db, status: "settled" as const };
+              const updatedD = { ...db, status: "settled" as const };
+              // Sync to Cloud
+              syncDebt(updatedD);
+              return updatedD;
             }
             return db;
           }));
@@ -670,6 +939,9 @@ export default function App() {
             status: "pending"
           };
           setScheduledExpenses(prev => [newSched, ...prev]);
+
+          // Sync to Cloud
+          syncScheduledExpense(newSched);
         }
       } else if (data.action === "confirm_schedule" && data.confirmSchedule) {
         const keyword = data.confirmSchedule.description?.toLowerCase() || "";
@@ -682,12 +954,17 @@ export default function App() {
             const amt = matchedExpense.amount;
             const selectedId = matchedExpense.accountId;
 
-            setAccounts(prevAccs => prevAccs.map(acc => {
+            const updatedAccs = accounts.map(acc => {
               if (acc.id === selectedId) {
-                return { ...acc, balance: acc.balance - amt };
+                const u = { ...acc, balance: acc.balance - amt };
+                // Sync to Cloud
+                syncAccount(u);
+                return u;
               }
               return acc;
-            }));
+            });
+
+            setAccounts(updatedAccs);
 
             const newTx: Transaction = {
               id: `sched-tx-ai-${Date.now()}`,
@@ -701,6 +978,10 @@ export default function App() {
 
             setTransactions(prev => [newTx, ...prev]);
             setScheduledExpenses(prev => prev.filter(s => s.id !== matchedExpense.id));
+
+            // Sync to Cloud
+            syncTransaction(newTx);
+            removeScheduledExpense(matchedExpense.id);
           }
         }
       }
@@ -973,19 +1254,85 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 {darkMode ? <Sun className="w-4 h-4 text-amber-500 animate-spin-once" /> : <Moon className="w-4 h-4 text-slate-700" />}
               </button>
 
-              <span className="text-xs text-stone-400 dark:text-stone-500 font-mono font-medium hidden sm:inline">
+              <span className="text-xs text-stone-400 dark:text-stone-500 font-mono font-medium hidden lg:inline">
                 {new Date().toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
               </span>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-              <img 
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" 
-                alt="Account Holder Avatar" 
-                className="w-8 h-8 rounded-full border border-stone-200 dark:border-stone-800"
-              />
+              
+              {/* Premium Google Cloud Auth Widget */}
+              {authLoading ? (
+                <div className="w-8 h-8 rounded-full border border-stone-200 animate-pulse bg-stone-100"></div>
+              ) : user ? (
+                <div className="flex items-center gap-2">
+                  <div className="hidden md:flex flex-col items-end leading-none">
+                    <span className="text-xs font-bold text-stone-850 dark:text-stone-200">{user.displayName}</span>
+                    <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-tight flex items-center gap-0.5 mt-0.5">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Cloud Synced
+                    </span>
+                  </div>
+                  <img 
+                    src={user.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80"} 
+                    alt={user.displayName || "User"} 
+                    className="w-8 h-8 rounded-full border border-blue-500 cursor-pointer hover:opacity-85 transition-opacity"
+                    title="Click to logout"
+                    referrerPolicy="no-referrer"
+                    onClick={async () => {
+                      if (confirm("System se logout karna chahte hain?")) {
+                        await logout();
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <button
+                  id="btn-google-login-header"
+                  onClick={async () => {
+                    try {
+                      await signInWithGoogle();
+                    } catch (err) {
+                      console.error("Auth error:", err);
+                    }
+                  }}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-200" />
+                  <span>Cloud Backup</span>
+                </button>
+              )}
             </div>
           </header>
 
           <div className="p-6 space-y-6">
+            
+            {/* Vercel Temporary LocalStorage Data Loss Warning Panel */}
+            {!user && (
+              <div className="bg-[#fffbeb] dark:bg-[#1a160d] p-5 rounded-2xl border border-amber-200/50 dark:border-amber-950/20 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
+                <div className="flex gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/5 flex items-center justify-center shrink-0">
+                    <Info className="w-5 h-5 text-amber-600 dark:text-amber-450" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-extrabold text-amber-850 dark:text-amber-200">Safeguard Pakistan Multi-Bank Ledger!</h4>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed mt-1">
+                      Vercel ya internet browsers par cache clear hone se aapke saaray transactions autometically reset ya delete ho sakte hain. Is nuclear data loss se bachne k liye, abhi secure Google Cloud Firestore active kijiye.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="btn-warning-backup-action"
+                  onClick={async () => {
+                    try {
+                      await signInWithGoogle();
+                    } catch (err) {
+                      console.error("Login failure:", err);
+                    }
+                  }}
+                  className="px-4.5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 font-bold text-[10px] text-white rounded-xl transition-all cursor-pointer shadow-sm shrink-0 uppercase tracking-wider"
+                >
+                  Activate Secure Cloud Sync
+                </button>
+              </div>
+            )}
             
             {/* 4 Multi-Account Stats Metrics Box */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2184,6 +2531,9 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                               setDebtPerson("");
                               setDebtAmount("");
                               setDebtNotes("");
+
+                              // Sync to Cloud
+                              syncDebt(newD);
                             }}
                             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors"
                           >
@@ -2297,7 +2647,14 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                       <button
                                         id={`btn-settle-${d.id}`}
                                         onClick={() => {
-                                          setDebts(prev => prev.map(db => db.id === d.id ? { ...db, status: "settled" as const } : db));
+                                          setDebts(prev => prev.map(db => {
+                                            if (db.id === d.id) {
+                                              const updated = { ...db, status: "settled" as const };
+                                              syncDebt(updated);
+                                              return updated;
+                                            }
+                                            return db;
+                                          }));
                                         }}
                                         className="p-1 px-2.5 bg-neutral-900 dark:bg-[#1a2030] hover:bg-neutral-800 text-white rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1"
                                       >
@@ -2309,6 +2666,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                                       id={`btn-del-debt-${d.id}`}
                                       onClick={() => {
                                         setDebts(prev => prev.filter(db => db.id !== d.id));
+                                        removeDebt(d.id);
                                       }}
                                       className="p-1.5 hover:bg-stone-100 dark:hover:bg-slate-800 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
                                       title="Delete Entry"

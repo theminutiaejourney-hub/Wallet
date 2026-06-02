@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Stores high-level preference data for the user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique identifier of the user" },
+        "email": { "type": "string", "description": "Email address of the user" },
+        "displayName": { "type": "string", "description": "Display name of the user" },
+        "darkMode": { "type": "boolean", "description": "User theme preference" },
+        "hideBalances": { "type": "boolean", "description": "User balance visibility preference" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Stores user financial accounts (banks, wallet, cash)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the account" },
+        "userId": { "type": "string", "description": "The owner user ID" },
+        "name": { "type": "string", "description": "Name of the account" },
+        "type": { "type": "string", "description": "Type of the account (e.g., Bank, Cash)" },
+        "balance": { "type": "number", "description": "Current balance in PKR" },
+        "accountNumber": { "type": "string", "description": "Optional account number" },
+        "color": { "type": "string", "description": "Tailwind color style class for UI" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "type", "balance", "color"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction entries (income, expense, transfer)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "toAccountId": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense", "transfer"] },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "accountId", "type", "amount", "category", "date"]
+    },
+    "Debt": {
+      "title": "Debt",
+      "description": "Lene-Dene Udhaar list entries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "person": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["receive", "pay"] },
+        "date": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "settled"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "person", "amount", "type", "date", "status"]
+    },
+    "ScheduledExpense": {
+      "title": "ScheduledExpense",
+      "description": "Future scheduled utility bills and rent payments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "paid"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "accountId", "amount", "category", "description", "date", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User setting preferences document"
+    },
+    "/users/{userId}/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "Subcollection of financial accounts owned by user"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Subcollection of financial transaction logs owned by user"
+    },
+    "/users/{userId}/debts/{debtId}": {
+      "schema": "Debt",
+      "description": "Subcollection of udhaar lene-dene records owned by user"
+    },
+    "/users/{userId}/scheduledExpenses/{scheduledExpenseId}": {
+      "schema": "ScheduledExpense",
+      "description": "Subcollection of scheduled recurring/planned expenses"
+    }
+  }
+}

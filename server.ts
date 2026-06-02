@@ -38,6 +38,27 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
+// Helper function to call Gemini model with automatic retries on transient errors
+async function generateContentWithRetry(client: any, model: string, contents: any, config: any, maxRetries = 2): Promise<any> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await client.models.generateContent({ model, contents, config });
+    } catch (err: any) {
+      attempt++;
+      const errStr = String(err?.message || err || "").toLowerCase();
+      const isTransient = errStr.includes("503") || errStr.includes("unavailable") || errStr.includes("overloaded") || errStr.includes("demand");
+      if (isTransient && attempt < maxRetries) {
+        // Log clean retry message without full scary API trace so system logs remain clean
+        console.log(`[Gemini Info] Model ${model} returned transient code (503/busy). Retrying attempt ${attempt + 1}/${maxRetries} in 150ms...`);
+        await new Promise(resolve => setTimeout(resolve, 150));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // AI Assistant Chat endpoint
 app.post("/api/chat", async (req, res) => {
   const { message, accounts, categories, transactions, debts, scheduledExpenses, currentTime } = req.body;
@@ -226,18 +247,15 @@ Guidelines for parsing:
 
     let response;
     try {
-      response = await client.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: userPrompt,
-        config: modelConfig
-      });
+      response = await generateContentWithRetry(client, "gemini-3.5-flash", userPrompt, modelConfig, 2);
     } catch (primaryErr: any) {
-      console.warn("Primary model gemini-3.5-flash failed or busy, trying fallback gemini-3.1-flash-lite:", primaryErr);
-      response = await client.models.generateContent({
-        model: "gemini-3.1-flash-lite",
-        contents: userPrompt,
-        config: modelConfig
-      });
+      console.log(`[Gemini Info] Switching to fallback model due to busy state or: ${primaryErr?.message || primaryErr}`);
+      try {
+        response = await generateContentWithRetry(client, "gemini-3.1-flash-lite", userPrompt, modelConfig, 2);
+      } catch (fallbackErr: any) {
+        console.warn("[Gemini Info] Busy fallback triggered.");
+        throw fallbackErr;
+      }
     }
 
     const replyRaw = response.text || "{}";
