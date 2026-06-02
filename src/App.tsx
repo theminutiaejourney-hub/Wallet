@@ -52,6 +52,7 @@ export default function App() {
   // ---- user authentication & cloud sync state ----
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const isSyncingFromCloud = useRef(false);
 
   // ---- state management ----
@@ -398,6 +399,26 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      console.error("Authentication error details:", err);
+      let friendlyError = err?.message || String(err);
+      if (err?.code === "auth/unauthorized-domain") {
+        friendlyError = "unauthorized-domain";
+      } else if (err?.code === "auth/popup-closed-by-user") {
+        friendlyError = "popup-closed";
+      } else if (err?.code === "auth/cancelled-popup-request") {
+        friendlyError = "popup-cancelled";
+      } else if (err?.code === "auth/popup-blocked") {
+        friendlyError = "popup-blocked";
+      }
+      setAuthError(friendlyError);
+    }
+  };
 
   // Sync to local storage
   useEffect(() => {
@@ -1286,13 +1307,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               ) : (
                 <button
                   id="btn-google-login-header"
-                  onClick={async () => {
-                    try {
-                      await signInWithGoogle();
-                    } catch (err) {
-                      console.error("Auth error:", err);
-                    }
-                  }}
+                  onClick={handleGoogleSignIn}
                   className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-blue-200" />
@@ -1306,31 +1321,112 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
             
             {/* Vercel Temporary LocalStorage Data Loss Warning Panel */}
             {!user && (
-              <div className="bg-[#fffbeb] dark:bg-[#1a160d] p-5 rounded-2xl border border-amber-200/50 dark:border-amber-950/20 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
-                <div className="flex gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/5 flex items-center justify-center shrink-0">
-                    <Info className="w-5 h-5 text-amber-600 dark:text-amber-450" />
+              <div className="flex flex-col gap-4">
+                <div className="bg-[#fffbeb] dark:bg-[#1a160d] p-5 rounded-2xl border border-amber-200/50 dark:border-amber-950/20 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
+                  <div className="flex gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/5 flex items-center justify-center shrink-0">
+                      <Info className="w-5 h-5 text-amber-600 dark:text-amber-450" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-extrabold text-amber-850 dark:text-amber-200">Safeguard Pakistan Multi-Bank Ledger!</h4>
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed mt-1">
+                        Vercel ya internet browsers par cache clear hone se aapke saaray transactions autometically reset ya delete ho sakte hain. Is nuclear data loss se bachne k liye, abhi secure Google Cloud Firestore active kijiye.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-extrabold text-amber-850 dark:text-amber-200">Safeguard Pakistan Multi-Bank Ledger!</h4>
-                    <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed mt-1">
-                      Vercel ya internet browsers par cache clear hone se aapke saaray transactions autometically reset ya delete ho sakte hain. Is nuclear data loss se bachne k liye, abhi secure Google Cloud Firestore active kijiye.
-                    </p>
-                  </div>
+                  <button
+                    id="btn-warning-backup-action"
+                    onClick={handleGoogleSignIn}
+                    className="px-4.5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 font-bold text-[10px] text-white rounded-xl transition-all cursor-pointer shadow-sm shrink-0 uppercase tracking-wider"
+                  >
+                    Activate Secure Cloud Sync
+                  </button>
                 </div>
-                <button
-                  id="btn-warning-backup-action"
-                  onClick={async () => {
-                    try {
-                      await signInWithGoogle();
-                    } catch (err) {
-                      console.error("Login failure:", err);
-                    }
-                  }}
-                  className="px-4.5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 font-bold text-[10px] text-white rounded-xl transition-all cursor-pointer shadow-sm shrink-0 uppercase tracking-wider"
-                >
-                  Activate Secure Cloud Sync
-                </button>
+
+                {authError && (
+                  <div className="bg-red-50 dark:bg-red-955/10 border border-red-200/60 dark:border-red-900/30 p-5 rounded-2xl space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-red-100/80 dark:bg-red-950/40 flex items-center justify-center shrink-0">
+                        <X className="w-5 h-5 text-red-650" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-xs font-extrabold text-red-900 dark:text-red-200">Google Cloud Authentication Error!</h4>
+                          <button 
+                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-400 hover:text-red-650 cursor-pointer"
+                            onClick={() => setAuthError(null)}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {authError === "unauthorized-domain" ? (
+                          <div className="space-y-3 mt-2 text-xs leading-relaxed text-red-800 dark:text-red-300">
+                            <p className="font-medium text-[11px]">
+                              🚨 <strong className="text-red-950 dark:text-red-100">Authorized Domain Issue Detected (Action Required)!</strong><br/>
+                              Aapka Vercel domain Firebase Console mein authorized nahi hai. Firebase security reasons ki wajah se is URL se Google Login block kar raha hai.
+                            </p>
+                            <div className="bg-white dark:bg-slate-900 border border-red-150 p-3 rounded-xl font-mono text-[10px] text-red-955 dark:text-red-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 overflow-x-auto">
+                              <div>
+                                <span className="text-[9px] text-stone-400 font-sans block uppercase font-bold">Copy Your Domain:</span>
+                                <strong>{window.location.hostname}</strong>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(window.location.hostname);
+                                  alert("Domain copied to clipboard!");
+                                }}
+                                className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-[9px] font-extrabold text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 transition cursor-pointer"
+                              >
+                                Copy Domain
+                              </button>
+                            </div>
+                            <div className="space-y-1 text-[11px] list-decimal pl-1">
+                              <div><strong>1. Niche diye gaye link par click karke Firebase Settings kholen:</strong></div>
+                              <div className="py-2.5">
+                                <a 
+                                  href="https://console.firebase.google.com/project/gen-lang-client-0648678122/authentication/settings"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-xl transition shadow-xs uppercase tracking-wider"
+                                >
+                                  Open Firebase settings <ArrowUpRight className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
+                              <div><strong>2.</strong> Settings tab mein panel settings open hone par <strong>"Authorized Domains"</strong> par click karen.</div>
+                              <div><strong>3.</strong> Right-side par <strong>"Add domain"</strong> button par click karen.</div>
+                              <div><strong>4.</strong> Apna domain (<code className="bg-red-100/50 dark:bg-red-950/40 px-1 py-0.5 rounded font-mono text-[10px]">{window.location.hostname}</code>) paste karke <strong>Save</strong> kar len.</div>
+                              <div><strong>5.</strong> Domain add hone k baad page refresh karen aur cloud backup active karen!</div>
+                            </div>
+                          </div>
+                        ) : authError === "popup-closed" || authError === "popup-cancelled" ? (
+                          <div className="mt-2 text-[11px] text-red-800 dark:text-red-300 leading-relaxed space-y-1">
+                            <p><strong>Popup Block ya Close ho gaya:</strong> Login popup window Google authentication complete hone se pehle hi band ho gayi, ya browser ne verify process bypass kar diya.</p>
+                            <p className="font-semibold text-red-900 dark:text-red-200 mt-2">Isko theek karne ke tareeqay:</p>
+                            <ul className="list-disc pl-5 mt-1 space-y-1">
+                              <li>Google login select karte hi sign-in panel open hone den aur koi aur button par toggle na karen.</li>
+                              <li>In-app browsers (jaise Facebook or WhatsApp preview browser) popups dynamically lock kar dete hain. URL ko standard <strong>Chrome</strong> ya <strong>Safari</strong> device browser app mein open karen.</li>
+                            </ul>
+                          </div>
+                        ) : authError === "popup-blocked" ? (
+                          <div className="mt-2 text-[11px] text-red-800 dark:text-red-300 leading-relaxed space-y-1">
+                            <p><strong>Popup Blocked:</strong> Aapke browser ne multi-environment constraints hone ki wajah se authentications pop-up page block kardiya.</p>
+                            <p className="font-semibold text-red-900 dark:text-red-200 mt-2">Solutions:</p>
+                            <ul className="list-disc pl-5 mt-1 space-y-1">
+                              <li>Apni browser address pointer setting check karen aur "Allow Popups for this site" select karen.</li>
+                              <li>Apna extra security extension (Brave shield / strict privacy) display toggle pause karen.</li>
+                            </ul>
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-[11px] text-red-800 dark:text-red-300 leading-relaxed">
+                            <p><strong>Error Details:</strong> {authError}</p>
+                            <p className="mt-2">Authentication update failed. Please ensure your Vercel url is whitelisted in Google Firebase Console authorized domains list.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             
