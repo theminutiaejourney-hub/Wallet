@@ -1515,34 +1515,33 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                 {new Date().toLocaleDateString("en-US", { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
               </span>
               
-              {/* Premium Google Cloud Auth Widget */}
+              {/* Premium App Cloud Sync Auth Widget */}
               {authLoading ? (
                 <div className="w-8 h-8 rounded-full border border-stone-200 animate-pulse bg-stone-100"></div>
               ) : user ? (
                 <div className="flex items-center gap-2">
-                  <div className="hidden md:flex flex-col items-end leading-none">
-                    <span className="text-xs font-bold text-stone-850 dark:text-stone-200">{user.displayName}</span>
+                  <div className="hidden md:flex flex-col items-end leading-none font-sans">
+                    <span className="text-xs font-bold text-stone-850 dark:text-stone-200">{user.displayName || "App User"}</span>
                     <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-tight flex items-center gap-0.5 mt-0.5">
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                       Cloud Synced
                     </span>
                   </div>
-                  <img 
-                    src={user.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80"} 
-                    alt={user.displayName || "User"} 
-                    className="w-8 h-8 rounded-full border border-blue-500 cursor-pointer hover:opacity-85 transition-opacity"
-                    title="Click to logout"
-                    referrerPolicy="no-referrer"
+                  <div 
+                    title="System se logout karne ke liye click karen"
                     onClick={async () => {
                       if (confirm("System se logout karna chahte hain?")) {
                         await logout();
                       }
                     }}
-                  />
+                    className="w-8 h-8 rounded-full bg-blue-550 hover:bg-blue-600 active:scale-95 text-white flex items-center justify-center font-extrabold text-xs uppercase transition-all shadow-sm cursor-pointer select-none border-2 border-blue-200 dark:border-blue-900"
+                  >
+                    {(user.displayName || user.email || "U")[0]}
+                  </div>
                 </div>
               ) : (
                 <button
-                  id="btn-google-login-header"
+                  id="btn-app-login-header"
                   onClick={() => {
                     setIsAuthModalOpen(true);
                     setAuthTab("signin");
@@ -1551,12 +1550,12 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                   className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-                  <span>Cloud Sync Login</span>
+                  <span>Cloud Login / Signup</span>
                 </button>
               )}
             </div>
           </header>
-
+ 
           <div className="p-6 space-y-6">
             
             {/* Vercel Temporary LocalStorage Data Loss Warning Panel */}
@@ -1586,91 +1585,6 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                     App Login / SignUp
                   </button>
                 </div>
-
-                {authError && (
-                  <div className="bg-red-50 dark:bg-red-955/10 border border-red-200/60 dark:border-red-900/30 p-5 rounded-2xl space-y-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-red-100/80 dark:bg-red-950/40 flex items-center justify-center shrink-0">
-                        <X className="w-5 h-5 text-red-650" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-center">
-                          <h4 className="text-xs font-extrabold text-red-900 dark:text-red-200">Google Cloud Authentication Error!</h4>
-                          <button 
-                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-400 hover:text-red-650 cursor-pointer"
-                            onClick={() => setAuthError(null)}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {authError === "unauthorized-domain" ? (
-                          <div className="space-y-3 mt-2 text-xs leading-relaxed text-red-800 dark:text-red-300">
-                            <p className="font-medium text-[11px]">
-                              🚨 <strong className="text-red-950 dark:text-red-100">Authorized Domain Issue Detected (Action Required)!</strong><br/>
-                              Aapka Vercel domain Firebase Console mein authorized nahi hai. Firebase security reasons ki wajah se is URL se Google Login block kar raha hai.
-                            </p>
-                            <div className="bg-white dark:bg-slate-900 border border-red-150 p-3 rounded-xl font-mono text-[10px] text-red-955 dark:text-red-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 overflow-x-auto">
-                              <div>
-                                <span className="text-[9px] text-stone-400 font-sans block uppercase font-bold">Copy Your Domain:</span>
-                                <strong>{window.location.hostname}</strong>
-                              </div>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(window.location.hostname);
-                                  alert("Domain copied to clipboard!");
-                                }}
-                                className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-[9px] font-extrabold text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 transition cursor-pointer"
-                              >
-                                Copy Domain
-                              </button>
-                            </div>
-                            <div className="space-y-1 text-[11px] list-decimal pl-1">
-                              <div><strong>1. Niche diye gaye link par click karke Firebase Settings kholen:</strong></div>
-                              <div className="py-2.5">
-                                <a 
-                                  href="https://console.firebase.google.com/project/gen-lang-client-0648678122/authentication/settings"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-xl transition shadow-xs uppercase tracking-wider"
-                                >
-                                  Open Firebase settings <ArrowUpRight className="w-3.5 h-3.5" />
-                                </a>
-                              </div>
-                              <div><strong>2.</strong> Settings tab mein panel settings open hone par <strong>"Authorized Domains"</strong> par click karen.</div>
-                              <div><strong>3.</strong> Right-side par <strong>"Add domain"</strong> button par click karen.</div>
-                              <div><strong>4.</strong> Apna domain (<code className="bg-red-100/50 dark:bg-red-950/40 px-1 py-0.5 rounded font-mono text-[10px]">{window.location.hostname}</code>) paste karke <strong>Save</strong> kar len.</div>
-                              <div><strong>5.</strong> Domain add hone k baad page refresh karen aur cloud backup active karen!</div>
-                            </div>
-                          </div>
-                        ) : authError === "popup-closed" || authError === "popup-cancelled" ? (
-                          <div className="mt-2 text-[11px] text-red-800 dark:text-red-300 leading-relaxed space-y-1">
-                            <p><strong>Popup Block ya Close ho gaya:</strong> Login popup window Google authentication complete hone se pehle hi band ho gayi, ya browser ne verify process bypass kar diya.</p>
-                            <p className="font-semibold text-red-900 dark:text-red-200 mt-2">Isko theek karne ke tareeqay:</p>
-                            <ul className="list-disc pl-5 mt-1 space-y-1">
-                              <li>Google login select karte hi sign-in panel open hone den aur koi aur button par toggle na karen.</li>
-                              <li>In-app browsers (jaise Facebook or WhatsApp preview browser) popups dynamically lock kar dete hain. URL ko standard <strong>Chrome</strong> ya <strong>Safari</strong> device browser app mein open karen.</li>
-                            </ul>
-                          </div>
-                        ) : authError === "popup-blocked" ? (
-                          <div className="mt-2 text-[11px] text-red-800 dark:text-red-300 leading-relaxed space-y-1">
-                            <p><strong>Popup Blocked:</strong> Aapke browser ne multi-environment constraints hone ki wajah se authentications pop-up page block kardiya.</p>
-                            <p className="font-semibold text-red-900 dark:text-red-200 mt-2">Solutions:</p>
-                            <ul className="list-disc pl-5 mt-1 space-y-1">
-                              <li>Apni browser address pointer setting check karen aur "Allow Popups for this site" select karen.</li>
-                              <li>Apna extra security extension (Brave shield / strict privacy) display toggle pause karen.</li>
-                            </ul>
-                          </div>
-                        ) : (
-                          <div className="mt-2 text-[11px] text-red-800 dark:text-red-300 leading-relaxed">
-                            <p><strong>Error Details:</strong> {authError}</p>
-                            <p className="mt-2">Authentication update failed. Please ensure your Vercel url is whitelisted in Google Firebase Console authorized domains list.</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
             
