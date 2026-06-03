@@ -128,6 +128,36 @@ export default function App() {
     ];
   });
 
+  // Keep references to current state to prevent stale closures in async auth triggers
+  const latestAccounts = useRef<Account[]>([]);
+  const latestTransactions = useRef<Transaction[]>([]);
+  const latestDebts = useRef<Debt[]>([]);
+  const latestScheduledExpenses = useRef<ScheduledExpense[]>([]);
+
+  useEffect(() => {
+    latestAccounts.current = accounts;
+  }, [accounts]);
+
+  useEffect(() => {
+    latestTransactions.current = transactions;
+  }, [transactions]);
+
+  useEffect(() => {
+    latestDebts.current = debts;
+  }, [debts]);
+
+  useEffect(() => {
+    latestScheduledExpenses.current = scheduledExpenses;
+  }, [scheduledExpenses]);
+
+  // Set initial refs on mount immediately
+  useEffect(() => {
+    latestAccounts.current = accounts;
+    latestTransactions.current = transactions;
+    latestDebts.current = debts;
+    latestScheduledExpenses.current = scheduledExpenses;
+  }, []);
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem("wallet_dark_mode") === "true";
   });
@@ -366,29 +396,96 @@ export default function App() {
             cloudScheds.push(docSnap.data() as ScheduledExpense);
           });
 
-          // If cloud has empty setup, import local data automatically to initialize
-          if (cloudAccounts.length === 0 && accounts.length > 0) {
-            console.log("[Setup] Backing up local state to secure cloud...");
-            for (const acc of accounts) {
-              await setDoc(doc(db, "users", uid, "accounts", acc.id), { ...acc, userId: uid });
+          // Safer Bidirectional Merge Sync - prevents overwriting newer local state
+          const mergedAccounts = [...latestAccounts.current];
+          cloudAccounts.forEach(cAcc => {
+            const idx = mergedAccounts.findIndex(l => l.id === cAcc.id);
+            if (idx > -1) {
+              mergedAccounts[idx] = cAcc;
+            } else {
+              mergedAccounts.push(cAcc);
             }
-            for (const tx of transactions) {
-              await setDoc(doc(db, "users", uid, "transactions", tx.id), { ...tx, userId: uid });
+          });
+
+          const mergedTransactions = [...latestTransactions.current];
+          cloudTxs.forEach(cTx => {
+            const idx = mergedTransactions.findIndex(l => l.id === cTx.id);
+            if (idx > -1) {
+              mergedTransactions[idx] = cTx;
+            } else {
+              mergedTransactions.push(cTx);
             }
-            for (const d of debts) {
-              await setDoc(doc(db, "users", uid, "debts", d.id), { ...d, userId: uid });
+          });
+
+          const mergedDebts = [...latestDebts.current];
+          cloudDebts.forEach(cDebt => {
+            const idx = mergedDebts.findIndex(l => l.id === cDebt.id);
+            if (idx > -1) {
+              mergedDebts[idx] = cDebt;
+            } else {
+              mergedDebts.push(cDebt);
             }
-            for (const s of scheduledExpenses) {
-              await setDoc(doc(db, "users", uid, "scheduledExpenses", s.id), { ...s, userId: uid });
+          });
+
+          const mergedScheds = [...latestScheduledExpenses.current];
+          cloudScheds.forEach(cSched => {
+            const idx = mergedScheds.findIndex(l => l.id === cSched.id);
+            if (idx > -1) {
+              mergedScheds[idx] = cSched;
+            } else {
+              mergedScheds.push(cSched);
             }
-          } else {
-            if (cloudAccounts.length > 0) {
-              setAccounts(cloudAccounts);
+          });
+
+          // Push any local-only elements up to Firestore so that cloud & local are 100% matched
+          console.log("[Setup] Syncing local-only items to Secure Cloud storage...");
+          for (const acc of mergedAccounts) {
+            const inCloud = cloudAccounts.some(c => c.id === acc.id);
+            if (!inCloud) {
+              await setDoc(doc(db, "users", uid, "accounts", acc.id), { 
+                ...acc, 
+                userId: uid,
+                updatedAt: new Date().toISOString()
+              }, { merge: true });
             }
-            setTransactions(cloudTxs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setDebts(cloudDebts);
-            setScheduledExpenses(cloudScheds);
           }
+          for (const tx of mergedTransactions) {
+            const inCloud = cloudTxs.some(c => c.id === tx.id);
+            if (!inCloud) {
+              await setDoc(doc(db, "users", uid, "transactions", tx.id), { 
+                ...tx, 
+                userId: uid,
+                updatedAt: new Date().toISOString()
+              }, { merge: true });
+            }
+          }
+          for (const d of mergedDebts) {
+            const inCloud = cloudDebts.some(c => c.id === d.id);
+            if (!inCloud) {
+              await setDoc(doc(db, "users", uid, "debts", d.id), { 
+                ...d, 
+                userId: uid,
+                updatedAt: new Date().toISOString()
+              }, { merge: true });
+            }
+          }
+          for (const s of mergedScheds) {
+            const inCloud = cloudScheds.some(c => c.id === s.id);
+            if (!inCloud) {
+              await setDoc(doc(db, "users", uid, "scheduledExpenses", s.id), { 
+                ...s, 
+                userId: uid,
+                updatedAt: new Date().toISOString()
+              }, { merge: true });
+            }
+          }
+
+          // Fully set local unified dataset which triggers localStorage updates
+          setAccounts(mergedAccounts);
+          setTransactions(mergedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+          setDebts(mergedDebts);
+          setScheduledExpenses(mergedScheds);
+
         } catch (err) {
           console.error("Authentication Firestore load failure:", err);
         } finally {
