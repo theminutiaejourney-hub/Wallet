@@ -1,8 +1,9 @@
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   signOut, 
   User 
 } from "firebase/auth";
@@ -24,13 +25,7 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth();
 
-// OAuth Google Provider
-const googleProvider = new GoogleAuthProvider();
-
-export async function signInWithGoogle(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user;
-}
+export { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile };
 
 export async function logout(): Promise<void> {
   await signOut(auth);

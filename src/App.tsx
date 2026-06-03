@@ -4,7 +4,9 @@ import { INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, CATEGORIES, formatPKR, getCateg
 import { 
   db, 
   auth, 
-  signInWithGoogle, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   logout, 
   handleFirestoreError, 
   OperationType 
@@ -15,7 +17,8 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  deleteDoc 
+  deleteDoc,
+  onSnapshot
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { 
@@ -45,7 +48,10 @@ import {
   Users,
   Check,
   Eye,
-  EyeOff
+  EyeOff,
+  Mail,
+  Lock,
+  User as UserIcon
 } from "lucide-react";
 
 export default function App() {
@@ -332,11 +338,104 @@ export default function App() {
     }
   };
 
+  // App Login Modal States
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [modalAuthError, setModalAuthError] = useState<string | null>(null);
+
+  const unsubscribeRefs = useRef<(() => void)[]>([]);
+
+  const cleanupSnapshotListeners = () => {
+    unsubscribeRefs.current.forEach(unsub => unsub());
+    unsubscribeRefs.current = [];
+  };
+
+  const formatEmailAddress = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed.includes("@")) return trimmed;
+    // Auto-convert plain username to formatted email domain to be Firebase-compatible
+    return `${trimmed.toLowerCase().replace(/[^a-z0-9]/g, "")}@ledger.pk`;
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) {
+      setModalAuthError("Username/Email aur password enter kijiye.");
+      return;
+    }
+    setAuthError(null);
+    setModalAuthError(null);
+    setAuthLoading(true);
+    try {
+      const emailVal = formatEmailAddress(authEmail);
+      await signInWithEmailAndPassword(auth, emailVal, authPassword);
+      setIsAuthModalOpen(false);
+      setAuthEmail("");
+      setAuthPassword("");
+    } catch (err: any) {
+      console.error("Login failure:", err);
+      let errMsg = err.message || String(err);
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found" || err.code === "auth/invalid-login-credentials") {
+        errMsg = "Ghalt credentials! Sahi Username/Email aur Password enter kijiye ya register (Sign Up) kijiye.";
+      } else if (err.code === "auth/invalid-email") {
+        errMsg = "Sahi Username ya Email format enter kijiye.";
+      }
+      setModalAuthError(errMsg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authDisplayName || !authEmail || !authPassword) {
+      setModalAuthError("Tamaam fields (Name, Username/Email, Password) fill kijiye.");
+      return;
+    }
+    if (authPassword.length < 6) {
+      setModalAuthError("Password kam az kam 6 characters ka hona chahiye.");
+      return;
+    }
+    setAuthError(null);
+    setModalAuthError(null);
+    setAuthLoading(true);
+    try {
+      const emailVal = formatEmailAddress(authEmail);
+      const credential = await createUserWithEmailAndPassword(auth, emailVal, authPassword);
+      if (credential.user) {
+        await updateProfile(credential.user, { displayName: authDisplayName });
+        setUser({ ...credential.user, displayName: authDisplayName } as User);
+      }
+      setIsAuthModalOpen(false);
+      setAuthEmail("");
+      setAuthPassword("");
+      setAuthDisplayName("");
+    } catch (err: any) {
+      console.error("Registration error:", err);
+      let errMsg = err.message || String(err);
+      if (err.code === "auth/email-already-in-use") {
+        errMsg = "Yeh Username/Email pehle se register hai. Please login kijiye ya koi doosra Username select kijiye.";
+      } else if (err.code === "auth/weak-password") {
+        errMsg = "Password kam az kam 6 characters ka hona chahiye.";
+      } else if (err.code === "auth/invalid-email") {
+        errMsg = "Sahi Username ya Email format enter kijiye.";
+      }
+      setModalAuthError(errMsg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   // ---- auth listener and firestore pull flow ----
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       setAuthLoading(false);
+      cleanupSnapshotListeners();
       
       if (firebaseUser) {
         isSyncingFromCloud.current = true;
@@ -360,8 +459,8 @@ export default function App() {
           } else {
             await setDoc(doc(db, "users", uid), {
               uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
+              email: firebaseUser.email || `${uid}@ledger.pk`,
+              displayName: firebaseUser.displayName || "App User",
               darkMode,
               hideBalances,
               updatedAt: new Date().toISOString()
@@ -486,36 +585,76 @@ export default function App() {
           setDebts(mergedDebts);
           setScheduledExpenses(mergedScheds);
 
+          // ---- Continuous Real-Time Snapshot Synchronizers ----
+          console.log("[Realtime] Binding active real-time Firebase snapshot listeners...");
+
+          const unsubAccounts = onSnapshot(collection(db, "users", uid, "accounts"), (snap) => {
+            if (isSyncingFromCloud.current) return;
+            const updated: Account[] = [];
+            snap.forEach(d => updated.push(d.data() as Account));
+            if (updated.length > 0) {
+              setAccounts(updated);
+            }
+          }, (err) => {
+            console.error("Accounts snapshot subscription failed:", err);
+          });
+          unsubscribeRefs.current.push(unsubAccounts);
+
+          const unsubTransactions = onSnapshot(collection(db, "users", uid, "transactions"), (snap) => {
+            if (isSyncingFromCloud.current) return;
+            const updated: Transaction[] = [];
+            snap.forEach(d => updated.push(d.data() as Transaction));
+            setTransactions(updated.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+          }, (err) => {
+            console.error("Transactions snapshot subscription failed:", err);
+          });
+          unsubscribeRefs.current.push(unsubTransactions);
+
+          const unsubDebts = onSnapshot(collection(db, "users", uid, "debts"), (snap) => {
+            if (isSyncingFromCloud.current) return;
+            const updated: Debt[] = [];
+            snap.forEach(d => updated.push(d.data() as Debt));
+            setDebts(updated);
+          }, (err) => {
+            console.error("Debts snapshot subscription failed:", err);
+          });
+          unsubscribeRefs.current.push(unsubDebts);
+
+          const unsubScheduled = onSnapshot(collection(db, "users", uid, "scheduledExpenses"), (snap) => {
+            if (isSyncingFromCloud.current) return;
+            const updated: ScheduledExpense[] = [];
+            snap.forEach(d => updated.push(d.data() as ScheduledExpense));
+            setScheduledExpenses(updated);
+          }, (err) => {
+            console.error("ScheduledExpenses snapshot subscription failed:", err);
+          });
+          unsubscribeRefs.current.push(unsubScheduled);
+
+          const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
+            if (isSyncingFromCloud.current) return;
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data.darkMode !== undefined) setDarkMode(data.darkMode);
+              if (data.hideBalances !== undefined) setHideBalances(data.hideBalances);
+            }
+          }, (err) => {
+            console.error("User profile settings snapshot failed:", err);
+          });
+          unsubscribeRefs.current.push(unsubUser);
+
         } catch (err) {
-          console.error("Authentication Firestore load failure:", err);
+          console.error("Authentication load failure:", err);
         } finally {
           isSyncingFromCloud.current = false;
         }
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      cleanupSnapshotListeners();
+    };
   }, []);
-
-  const handleGoogleSignIn = async () => {
-    setAuthError(null);
-    try {
-      await signInWithGoogle();
-    } catch (err: any) {
-      console.error("Authentication error details:", err);
-      let friendlyError = err?.message || String(err);
-      if (err?.code === "auth/unauthorized-domain") {
-        friendlyError = "unauthorized-domain";
-      } else if (err?.code === "auth/popup-closed-by-user") {
-        friendlyError = "popup-closed";
-      } else if (err?.code === "auth/cancelled-popup-request") {
-        friendlyError = "popup-cancelled";
-      } else if (err?.code === "auth/popup-blocked") {
-        friendlyError = "popup-blocked";
-      }
-      setAuthError(friendlyError);
-    }
-  };
 
   // Sync to local storage
   useEffect(() => {
@@ -1404,11 +1543,15 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               ) : (
                 <button
                   id="btn-google-login-header"
-                  onClick={handleGoogleSignIn}
+                  onClick={() => {
+                    setIsAuthModalOpen(true);
+                    setAuthTab("signin");
+                    setModalAuthError(null);
+                  }}
                   className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-                  <span>Cloud Backup</span>
+                  <span>Cloud Sync Login</span>
                 </button>
               )}
             </div>
@@ -1427,16 +1570,20 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                     <div>
                       <h4 className="text-xs font-extrabold text-amber-850 dark:text-amber-200">Safeguard Pakistan Multi-Bank Ledger!</h4>
                       <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed mt-1">
-                        Vercel ya internet browsers par cache clear hone se aapke saaray transactions autometically reset ya delete ho sakte hain. Is nuclear data loss se bachne k liye, abhi secure Google Cloud Firestore active kijiye.
+                        Vercel ya internet browsers par cache clear hone se aapke saaray transactions autometically reset ya delete ho sakte hain. Is data loss se bachne k liye, abhi App Login kijiye aur continuous cloud synchronization active karen.
                       </p>
                     </div>
                   </div>
                   <button
                     id="btn-warning-backup-action"
-                    onClick={handleGoogleSignIn}
+                    onClick={() => {
+                      setIsAuthModalOpen(true);
+                      setAuthTab("signin");
+                      setModalAuthError(null);
+                    }}
                     className="px-4.5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 font-bold text-[10px] text-white rounded-xl transition-all cursor-pointer shadow-sm shrink-0 uppercase tracking-wider"
                   >
-                    Activate Secure Cloud Sync
+                    App Login / SignUp
                   </button>
                 </div>
 
@@ -3427,6 +3574,208 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               >
                 Close Plan View
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CUSTOM AUTHENTICATION (EMAIL/PASSWORD OR SIMPLE USERNAME) */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/50 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#151926] rounded-2xl w-full max-w-md border border-stone-200 dark:border-[#21283b] shadow-2xl overflow-hidden flex flex-col transition-colors">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-stone-100 dark:border-[#21283b] flex justify-between items-center bg-stone-50 dark:bg-[#131622] shrink-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-display font-bold text-stone-900 dark:text-white text-sm">
+                  {authTab === "signin" ? "Ledger Cloud Sync Login" : "Naya Ledger Account Register"}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsAuthModalOpen(false)}
+                className="text-stone-400 dark:text-stone-300 hover:text-stone-700 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-[#1e2538] p-1.5 rounded-lg transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {/* Urdu Briefing Notice */}
+              <p className="text-[11px] text-stone-650 dark:text-stone-400 leading-relaxed mb-5 bg-blue-50/50 dark:bg-blue-950/20 p-3.5 border border-blue-100 dark:border-blue-950/40 rounded-xl">
+                🇵🇰 <strong>Apna simple Mobile / Username ya Email enter kijiye.</strong> Is custom login k zariye aapka sara ledger data cloud par automatic secure rahega aur background me continuous sync hota rahega.
+              </p>
+
+              {/* Tabs Switcher */}
+              <div className="flex gap-1.5 bg-stone-100 dark:bg-[#131622] p-1 rounded-xl mb-6 border border-stone-200/40 dark:border-[#21283b]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab("signin");
+                    setModalAuthError(null);
+                  }}
+                  className={`flex-1 py-2 text-center text-xs font-extrabold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
+                    authTab === "signin" 
+                      ? "bg-white dark:bg-[#1e2538] text-stone-900 dark:text-white shadow-xs" 
+                      : "text-stone-400 dark:text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab("signup");
+                    setModalAuthError(null);
+                  }}
+                  className={`flex-1 py-1.5 text-center text-xs font-extrabold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
+                    authTab === "signup" 
+                      ? "bg-white dark:bg-[#1e2538] text-stone-900 dark:text-white shadow-xs" 
+                      : "text-stone-400 dark:text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
+                  }`}
+                >
+                  Create Account
+                </button>
+              </div>
+
+              {/* Error Message Box */}
+              {modalAuthError && (
+                <div className="bg-red-50 dark:bg-red-955/10 border border-red-200/50 dark:border-red-900/20 text-red-700 dark:text-red-400 text-xs p-3.5 rounded-xl mb-4 leading-relaxed font-semibold">
+                  {modalAuthError}
+                </div>
+              )}
+
+              {/* Form */}
+              {authTab === "signin" ? (
+                <form onSubmit={handleEmailSignIn} className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-stone-400" />
+                      <span>Username ya Email</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                      placeholder="e.g. shahid ya shahid@ledger.pk"
+                    />
+                    <span className="text-[10px] text-stone-405 dark:text-stone-500 block mt-1">Aap apna simple naya naam bhi likh sakte hain.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-stone-400" />
+                      <span>Password</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        className="w-full text-xs font-semibold p-3 pr-10 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                        placeholder="••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 hover:text-stone-605 focus:outline-hidden"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {authLoading ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-blue-200" />
+                        <span>Sign In (Sync On Karen)</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleEmailSignUp} className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                      <UserIcon className="w-3.5 h-3.5 text-stone-400" />
+                      <span>Aapka Poora Name (Zaati Naam)</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={authDisplayName}
+                      onChange={(e) => setAuthDisplayName(e.target.value)}
+                      className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                      placeholder="e.g. Muhammad Shahid"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-stone-400" />
+                      <span>Pasandeda Username ya Email</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                      placeholder="e.g. shahid ya shahid@ledger.pk"
+                    />
+                    <span className="text-[10px] text-stone-400 dark:text-stone-500 block mt-1">Aap apna simple naya naam bhi likh sakte hain.</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-stone-400" />
+                      <span>Naya Password (kam az kam 6 characters)</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        className="w-full text-xs font-semibold p-3 pr-10 border border-[#CBD5E1] dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                        placeholder="••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 hover:text-stone-605 focus:outline-hidden"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {authLoading ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-200" />
+                        <span>Sign Up / Register Karen</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         </div>
