@@ -20,7 +20,7 @@ import {
   deleteDoc,
   onSnapshot
 } from "firebase/firestore";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { onAuthStateChanged, User, updatePassword } from "firebase/auth";
 import { 
   Plus, 
   Trash2, 
@@ -338,8 +338,15 @@ export default function App() {
     }
   };
 
-  // App Login Modal States
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  // User Settings Modal & Change Password States
+  const [isUserSettingsOpen, setIsUserSettingsOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState<boolean>(false);
+  const [changePasswordLoading, setChangePasswordLoading] = useState<boolean>(false);
+
+  // Fullscreen Authentication and onboarding UI States
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -373,7 +380,6 @@ export default function App() {
     try {
       const emailVal = formatEmailAddress(authEmail);
       await signInWithEmailAndPassword(auth, emailVal, authPassword);
-      setIsAuthModalOpen(false);
       setAuthEmail("");
       setAuthPassword("");
     } catch (err: any) {
@@ -410,7 +416,6 @@ export default function App() {
         await updateProfile(credential.user, { displayName: authDisplayName });
         setUser({ ...credential.user, displayName: authDisplayName } as User);
       }
-      setIsAuthModalOpen(false);
       setAuthEmail("");
       setAuthPassword("");
       setAuthDisplayName("");
@@ -427,6 +432,46 @@ export default function App() {
       setModalAuthError(errMsg);
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || !confirmNewPassword) {
+      setChangePasswordError("Meharbani karke naya password enter kijiye.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setChangePasswordError("Password kam az kam 6 characters ka hona chahiye.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setChangePasswordError("Dono passwords match nahi karte.");
+      return;
+    }
+
+    setChangePasswordError(null);
+    setChangePasswordSuccess(false);
+    setChangePasswordLoading(true);
+
+    try {
+      if (auth.currentUser) {
+        await updatePassword(auth.currentUser, newPassword);
+        setChangePasswordSuccess(true);
+        setNewPassword("");
+        setConfirmNewPassword("");
+      } else {
+        setChangePasswordError("Aap logged in nahi hain. Please pehle login kijiye.");
+      }
+    } catch (err: any) {
+      console.error("Password switch failure:", err);
+      let msg = err.message || String(err);
+      if (err.code === "auth/requires-recent-login") {
+        msg = "Security limits ki wajah se, password badalne ke liye aapko pehle logout kar ke dobara login karna parega.";
+      }
+      setChangePasswordError(msg);
+    } finally {
+      setChangePasswordLoading(false);
     }
   };
 
@@ -495,82 +540,52 @@ export default function App() {
             cloudScheds.push(docSnap.data() as ScheduledExpense);
           });
 
-          // Safer Bidirectional Merge Sync - prevents overwriting newer local state
-          const mergedAccounts = [...latestAccounts.current];
-          cloudAccounts.forEach(cAcc => {
-            const idx = mergedAccounts.findIndex(l => l.id === cAcc.id);
-            if (idx > -1) {
-              mergedAccounts[idx] = cAcc;
-            } else {
-              mergedAccounts.push(cAcc);
-            }
-          });
+          let finalAccounts = cloudAccounts;
+          let finalTransactions = cloudTxs;
+          let finalDebts = cloudDebts;
+          let finalScheds = cloudScheds;
 
-          const mergedTransactions = [...latestTransactions.current];
-          cloudTxs.forEach(cTx => {
-            const idx = mergedTransactions.findIndex(l => l.id === cTx.id);
-            if (idx > -1) {
-              mergedTransactions[idx] = cTx;
-            } else {
-              mergedTransactions.push(cTx);
-            }
-          });
+          if (!userDoc.exists()) {
+            // Brand new User signup! Let's bootstrap their secure database with initial states
+            console.log("[Setup] First-time signup! Bootstrapping user data from templates...");
+            finalAccounts = [...latestAccounts.current];
+            finalTransactions = [...latestTransactions.current];
+            finalDebts = [...latestDebts.current];
+            finalScheds = [...latestScheduledExpenses.current];
 
-          const mergedDebts = [...latestDebts.current];
-          cloudDebts.forEach(cDebt => {
-            const idx = mergedDebts.findIndex(l => l.id === cDebt.id);
-            if (idx > -1) {
-              mergedDebts[idx] = cDebt;
-            } else {
-              mergedDebts.push(cDebt);
-            }
-          });
+            // Save user profile profile
+            await setDoc(doc(db, "users", uid), {
+              uid,
+              email: firebaseUser.email || `${uid}@ledger.pk`,
+              displayName: firebaseUser.displayName || "App User",
+              darkMode,
+              hideBalances,
+              updatedAt: new Date().toISOString()
+            });
 
-          const mergedScheds = [...latestScheduledExpenses.current];
-          cloudScheds.forEach(cSched => {
-            const idx = mergedScheds.findIndex(l => l.id === cSched.id);
-            if (idx > -1) {
-              mergedScheds[idx] = cSched;
-            } else {
-              mergedScheds.push(cSched);
-            }
-          });
-
-          // Push any local-only elements up to Firestore so that cloud & local are 100% matched
-          console.log("[Setup] Syncing local-only items to Secure Cloud storage...");
-          for (const acc of mergedAccounts) {
-            const inCloud = cloudAccounts.some(c => c.id === acc.id);
-            if (!inCloud) {
+            // Write items to cloud
+            for (const acc of finalAccounts) {
               await setDoc(doc(db, "users", uid, "accounts", acc.id), { 
                 ...acc, 
                 userId: uid,
                 updatedAt: new Date().toISOString()
               }, { merge: true });
             }
-          }
-          for (const tx of mergedTransactions) {
-            const inCloud = cloudTxs.some(c => c.id === tx.id);
-            if (!inCloud) {
+            for (const tx of finalTransactions) {
               await setDoc(doc(db, "users", uid, "transactions", tx.id), { 
                 ...tx, 
                 userId: uid,
                 updatedAt: new Date().toISOString()
               }, { merge: true });
             }
-          }
-          for (const d of mergedDebts) {
-            const inCloud = cloudDebts.some(c => c.id === d.id);
-            if (!inCloud) {
+            for (const d of finalDebts) {
               await setDoc(doc(db, "users", uid, "debts", d.id), { 
                 ...d, 
                 userId: uid,
                 updatedAt: new Date().toISOString()
               }, { merge: true });
             }
-          }
-          for (const s of mergedScheds) {
-            const inCloud = cloudScheds.some(c => c.id === s.id);
-            if (!inCloud) {
+            for (const s of finalScheds) {
               await setDoc(doc(db, "users", uid, "scheduledExpenses", s.id), { 
                 ...s, 
                 userId: uid,
@@ -579,11 +594,11 @@ export default function App() {
             }
           }
 
-          // Fully set local unified dataset which triggers localStorage updates
-          setAccounts(mergedAccounts);
-          setTransactions(mergedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-          setDebts(mergedDebts);
-          setScheduledExpenses(mergedScheds);
+          // Fully set local unified dataset with clean, non-contaminated cloud data
+          setAccounts(finalAccounts);
+          setTransactions(finalTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+          setDebts(finalDebts);
+          setScheduledExpenses(finalScheds);
 
           // ---- Continuous Real-Time Snapshot Synchronizers ----
           console.log("[Realtime] Binding active real-time Firebase snapshot listeners...");
@@ -592,9 +607,7 @@ export default function App() {
             if (isSyncingFromCloud.current) return;
             const updated: Account[] = [];
             snap.forEach(d => updated.push(d.data() as Account));
-            if (updated.length > 0) {
-              setAccounts(updated);
-            }
+            setAccounts(updated);
           }, (err) => {
             console.error("Accounts snapshot subscription failed:", err);
           });
@@ -1320,6 +1333,244 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
     "Mery budget k hisab se best financial savings plan kiya hai?"
   ];
 
+  if (authLoading) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center bg-stone-50 dark:bg-[#0f111a] p-6 transition-all duration-300 ${darkMode ? "dark" : ""}`}>
+        <div className="flex flex-col items-center max-w-sm text-center">
+          <div className="relative mb-6">
+            <div className="w-16 h-16 border-4 border-blue-605/20 dark:border-blue-500/10 rounded-full animate-pulse"></div>
+            <div className="absolute top-0 left-0 w-16 h-16 border-4 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin"></div>
+            <Sparkles className="w-6 h-6 text-blue-600 dark:text-blue-450 absolute inset-0 m-auto animate-bounce" />
+          </div>
+          <h3 className="font-display font-semibold text-stone-850 dark:text-white text-base">Naya Ledger Syncing...</h3>
+          <p className="text-xs text-stone-400 dark:text-stone-500 mt-2">Apka financial database secure server se connect aur sync ho raha hai. Meharbani karke thora intezar karen.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 md:p-8 bg-stone-50 dark:bg-[#0f111a] transition-all duration-300 ${darkMode ? "dark" : ""}`}>
+        <div className="bg-white dark:bg-[#151926] rounded-2xl w-full max-w-lg border border-stone-200 dark:border-[#21283b] shadow-2 shadow-neutral-200 dark:shadow-none overflow-hidden flex flex-col transition-colors my-auto animate-fade-in">
+          {/* Header */}
+          <div className="px-6 py-5 border-b border-stone-100 dark:border-[#21283b] flex flex-col items-center text-center bg-stone-50 dark:bg-[#131622] shrink-0">
+            <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-md mb-3.5">
+              W
+            </div>
+            <h2 className="font-display font-extrabold text-[#1f2937] dark:text-white text-lg leading-tight uppercase tracking-wide">
+              Naya Ledger App
+            </h2>
+            <p className="text-xs text-[#6b7280] dark:text-stone-500 font-medium font-sans mt-0.5">
+              Secure Multi-Bank Ledger & Financial Tracking
+            </p>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 md:p-8 flex flex-col justify-between">
+            {/* Urdu Invitation Message */}
+            <p className="text-[11.5px] text-[#4b5563] dark:text-stone-300 leading-relaxed mb-6 bg-[#eff6ff] dark:bg-blue-950/20 p-3.5 border border-blue-100 dark:border-[#21283b] rounded-xl font-medium">
+              🇵🇰 <strong>Apna Username ya Email aur Password enter kijiye.</strong> Is custom ledger ko access karne ke liye login karna zaroori hai. Is se aapka data safe aur continuous synced rahega.
+            </p>
+
+            {/* Tabs Selector */}
+            <div className="flex gap-1.5 bg-[#f3f4f6] dark:bg-[#131622] p-1.5 rounded-xl mb-6 border border-stone-200/40 dark:border-[#21283b]">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab("signin");
+                  setModalAuthError(null);
+                }}
+                className={`flex-1 py-1.5 text-center text-xs font-extrabold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
+                  authTab === "signin" 
+                    ? "bg-white dark:bg-[#1e2538] text-stone-900 dark:text-white shadow-xs" 
+                    : "text-stone-400 dark:text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
+                }`}
+              >
+                Sign In / Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab("signup");
+                  setModalAuthError(null);
+                }}
+                className={`flex-1 py-1.5 text-center text-xs font-extrabold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
+                  authTab === "signup" 
+                    ? "bg-white dark:bg-[#1e2538] text-stone-900 dark:text-white shadow-sm" 
+                    : "text-stone-400 dark:text-stone-500 hover:text-stone-300 dark:hover:text-stone-200"
+                }`}
+              >
+                Create Account
+              </button>
+            </div>
+
+            {/* Error Message Box */}
+            {modalAuthError && (
+              <div className="bg-red-50 dark:bg-red-955/10 border border-red-200/50 dark:border-red-900/20 text-[#dc2626] dark:text-red-400 text-xs p-3.5 rounded-xl mb-4 leading-relaxed font-semibold">
+                {modalAuthError}
+              </div>
+            )}
+
+            {/* Form */}
+            {authTab === "signin" ? (
+              <form onSubmit={handleEmailSignIn} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-extrabold text-[#4b5563] dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#9ca3af]" />
+                    <span>Username ya Email</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-[#111827] dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                    placeholder="e.g. shahid ya shahid@ledger.pk"
+                  />
+                  <span className="text-[10px] text-[#6b7280] dark:text-stone-500 block mt-1">Naya account banaya hai to apna username enter karen.</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-[#4b5563] dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-[#9ca3af]" />
+                    <span>Password</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full text-xs font-semibold p-3 pr-10 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-[#111827] dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                      placeholder="••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 hover:text-stone-605 focus:outline-hidden"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {authLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-blue-200" />
+                      <span>Log In (Enter Dashboard)</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleEmailSignUp} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-extrabold text-[#4b5563] dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                    <UserIcon className="w-3.5 h-3.5 text-[#9ca3af]" />
+                    <span>Aapka Poora Name</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={authDisplayName}
+                    onChange={(e) => setAuthDisplayName(e.target.value)}
+                    className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-[#111827] dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                    placeholder="e.g. Muhammad Shahid"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-[#4b5563] dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#9ca3af]" />
+                    <span>Pasandeda Username ya Email Address</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-[#111827] dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                    placeholder="e.g. shahid ya shahid@ledger.pk"
+                  />
+                  <span className="text-[10px] text-[#6b7280] dark:text-stone-500 block mt-1">Aap apna simple custom name (e.g. shahid) select kar sakte hain.</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-[#4b5563] dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-[#9ca3af]" />
+                    <span>Naya Password (kam az kam 6 characters)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full text-xs font-semibold p-3 pr-10 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-[#111827] dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                      placeholder="••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-404 hover:text-[#374151] focus:outline-hidden"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full mt-2 py-3 bg-emerald-650 hover:bg-emerald-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {authLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-200" />
+                      <span>Sign Up / Register Naya Account</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* Dark Mode switcher at the bottom of login */}
+            <div className="mt-8 flex justify-center items-center gap-2 border-t border-stone-105 dark:border-[#21283b] pt-4 shrink-0">
+              <span className="text-[11px] text-stone-405 dark:text-stone-500 font-medium">Visual Theme:</span>
+              <button
+                type="button"
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-1 px-3 bg-stone-100 dark:bg-[#1e2538] hover:bg-stone-200 dark:hover:bg-[#252f4a] text-stone-605 dark:text-stone-300 text-[10px] rounded-lg font-extrabold flex items-center gap-1 transition-all cursor-pointer select-none"
+              >
+                {darkMode ? (
+                  <>
+                    <Sun className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Light Mode</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-3.5 h-3.5 text-slate-700" />
+                    <span>Dark Theme</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen bg-[#F8F9FA] dark:bg-[#0f111a] text-[#1A1A1B] dark:text-[#f3f4f6] flex flex-col font-sans transition-all duration-300 ${darkMode ? "dark" : ""}`}>
       
@@ -1527,66 +1778,28 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
                       Cloud Synced
                     </span>
                   </div>
-                  <div 
-                    title="System se logout karne ke liye click karen"
-                    onClick={async () => {
-                      if (confirm("System se logout karna chahte hain?")) {
-                        await logout();
-                      }
+                  <button 
+                    type="button"
+                    title="User Settings & Password Change"
+                    onClick={() => {
+                      setIsUserSettingsOpen(true);
+                      setChangePasswordError(null);
+                      setChangePasswordSuccess(false);
+                      setNewPassword("");
+                      setConfirmNewPassword("");
                     }}
-                    className="w-8 h-8 rounded-full bg-blue-550 hover:bg-blue-600 active:scale-95 text-white flex items-center justify-center font-extrabold text-xs uppercase transition-all shadow-sm cursor-pointer select-none border-2 border-blue-200 dark:border-blue-900"
+                    className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white flex items-center justify-center font-extrabold text-xs uppercase transition-all shadow-sm cursor-pointer select-none border-2 border-blue-200 dark:border-blue-900"
                   >
                     {(user.displayName || user.email || "U")[0]}
-                  </div>
+                  </button>
                 </div>
-              ) : (
-                <button
-                  id="btn-app-login-header"
-                  onClick={() => {
-                    setIsAuthModalOpen(true);
-                    setAuthTab("signin");
-                    setModalAuthError(null);
-                  }}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-                  <span>Cloud Login / Signup</span>
-                </button>
-              )}
+              ) : null}
             </div>
           </header>
  
           <div className="p-6 space-y-6">
             
-            {/* Vercel Temporary LocalStorage Data Loss Warning Panel */}
-            {!user && (
-              <div className="flex flex-col gap-4">
-                <div className="bg-[#fffbeb] dark:bg-[#1a160d] p-5 rounded-2xl border border-amber-200/50 dark:border-amber-950/20 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
-                  <div className="flex gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/5 flex items-center justify-center shrink-0">
-                      <Info className="w-5 h-5 text-amber-600 dark:text-amber-450" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-extrabold text-amber-850 dark:text-amber-200">Safeguard Pakistan Multi-Bank Ledger!</h4>
-                      <p className="text-[11px] text-amber-700 dark:text-amber-400/90 leading-relaxed mt-1">
-                        Vercel ya internet browsers par cache clear hone se aapke saaray transactions autometically reset ya delete ho sakte hain. Is data loss se bachne k liye, abhi App Login kijiye aur continuous cloud synchronization active karen.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    id="btn-warning-backup-action"
-                    onClick={() => {
-                      setIsAuthModalOpen(true);
-                      setAuthTab("signin");
-                      setModalAuthError(null);
-                    }}
-                    className="px-4.5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 font-bold text-[10px] text-white rounded-xl transition-all cursor-pointer shadow-sm shrink-0 uppercase tracking-wider"
-                  >
-                    App Login / SignUp
-                  </button>
-                </div>
-              </div>
-            )}
+
             
             {/* 4 Multi-Account Stats Metrics Box */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3493,20 +3706,20 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
         </div>
       )}
 
-      {/* MODAL: CUSTOM AUTHENTICATION (EMAIL/PASSWORD OR SIMPLE USERNAME) */}
-      {isAuthModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/50 backdrop-blur-xs">
-          <div className="bg-white dark:bg-[#151926] rounded-2xl w-full max-w-md border border-stone-200 dark:border-[#21283b] shadow-2xl overflow-hidden flex flex-col transition-colors">
+      {/* MODAL: USER ACCOUNT SETTINGS & PASSWORD CHANGE */}
+      {isUserSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#151926] rounded-2xl w-full max-w-md border border-stone-200 dark:border-[#21283b] shadow-2xl overflow-hidden flex flex-col transition-all">
             {/* Header */}
-            <div className="px-5 py-4 border-b border-stone-100 dark:border-[#21283b] flex justify-between items-center bg-stone-50 dark:bg-[#131622] shrink-0">
+            <div className="px-5 py-4 border-b border-stone-105 dark:border-[#21283b] flex justify-between items-center bg-stone-50 dark:bg-[#131622] shrink-0">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <h3 className="font-display font-bold text-stone-900 dark:text-white text-sm">
-                  {authTab === "signin" ? "Ledger Cloud Sync Login" : "Naya Ledger Account Register"}
+                <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-display font-extrabold text-stone-950 dark:text-white text-xs uppercase tracking-wider">
+                  Account aur Security Setup
                 </h3>
               </div>
               <button 
-                onClick={() => setIsAuthModalOpen(false)}
+                onClick={() => setIsUserSettingsOpen(false)}
                 className="text-stone-400 dark:text-stone-300 hover:text-stone-700 dark:hover:text-white hover:bg-stone-100 dark:hover:bg-[#1e2538] p-1.5 rounded-lg transition-all cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -3514,182 +3727,100 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
             </div>
 
             {/* Modal Body */}
-            <div className="p-6">
-              {/* Urdu Briefing Notice */}
-              <p className="text-[11px] text-stone-650 dark:text-stone-400 leading-relaxed mb-5 bg-blue-50/50 dark:bg-blue-950/20 p-3.5 border border-blue-100 dark:border-blue-950/40 rounded-xl">
-                🇵🇰 <strong>Apna simple Mobile / Username ya Email enter kijiye.</strong> Is custom login k zariye aapka sara ledger data cloud par automatic secure rahega aur background me continuous sync hota rahega.
-              </p>
-
-              {/* Tabs Switcher */}
-              <div className="flex gap-1.5 bg-stone-100 dark:bg-[#131622] p-1 rounded-xl mb-6 border border-stone-200/40 dark:border-[#21283b]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthTab("signin");
-                    setModalAuthError(null);
-                  }}
-                  className={`flex-1 py-2 text-center text-xs font-extrabold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                    authTab === "signin" 
-                      ? "bg-white dark:bg-[#1e2538] text-stone-900 dark:text-white shadow-xs" 
-                      : "text-stone-400 dark:text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
-                  }`}
-                >
-                  Sign In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthTab("signup");
-                    setModalAuthError(null);
-                  }}
-                  className={`flex-1 py-1.5 text-center text-xs font-extrabold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                    authTab === "signup" 
-                      ? "bg-white dark:bg-[#1e2538] text-stone-900 dark:text-white shadow-xs" 
-                      : "text-stone-400 dark:text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
-                  }`}
-                >
-                  Create Account
-                </button>
+            <div className="p-6 space-y-6">
+              {/* Profile Details Cards */}
+              <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/20 dark:from-[#131622] dark:to-[#1a2035] p-4 rounded-xl border border-blue-100/40 dark:border-[#21283b]">
+                <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-widest font-extrabold mb-1">Active Account Name</p>
+                <div className="text-sm font-bold text-stone-900 dark:text-white">{user?.displayName || "App User"}</div>
+                
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 uppercase tracking-widest font-extrabold mt-3.5 mb-1">Secure Sign ID</p>
+                <div className="text-xs font-mono font-bold text-stone-605 dark:text-stone-300 break-all">{user?.email}</div>
               </div>
 
-              {/* Error Message Box */}
-              {modalAuthError && (
-                <div className="bg-red-50 dark:bg-red-955/10 border border-red-200/50 dark:border-red-900/20 text-red-700 dark:text-red-400 text-xs p-3.5 rounded-xl mb-4 leading-relaxed font-semibold">
-                  {modalAuthError}
+              {/* Password Change Fields */}
+              <form onSubmit={handleChangePassword} className="space-y-4 pt-1">
+                <h4 className="text-xs font-extrabold text-stone-900 dark:text-white uppercase tracking-wider border-b border-stone-100 dark:border-[#21283b] pb-2 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Naya Password Badlen (Change Password)</span>
+                </h4>
+
+                {changePasswordError && (
+                  <div className="bg-red-50 dark:bg-red-955/10 border border-red-250/30 text-[#dc2626] dark:text-red-400 text-xs p-3 rounded-lg leading-relaxed font-semibold">
+                    {changePasswordError}
+                  </div>
+                )}
+
+                {changePasswordSuccess && (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-250/30 text-emerald-700 dark:text-emerald-400 text-xs p-3 rounded-lg leading-relaxed font-semibold">
+                    ✔ Aapka password kamyabi se tabdeel ho gaya hai! Next login par naya password use karen.
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1">Naya Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setChangePasswordSuccess(false);
+                      setChangePasswordError(null);
+                    }}
+                    placeholder="Kam az kam 6 characters"
+                    className="w-full text-xs font-semibold p-2.5 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                  />
                 </div>
-              )}
 
-              {/* Form */}
-              {authTab === "signin" ? (
-                <form onSubmit={handleEmailSignIn} className="space-y-4">
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Username ya Email</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-                      placeholder="e.g. shahid ya shahid@ledger.pk"
-                    />
-                    <span className="text-[10px] text-stone-405 dark:text-stone-500 block mt-1">Aap apna simple naya naam bhi likh sakte hain.</span>
-                  </div>
+                <div>
+                  <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1">Naya Password Confirm Karen</label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmNewPassword}
+                    onChange={(e) => {
+                      setConfirmNewPassword(e.target.value);
+                      setChangePasswordSuccess(false);
+                      setChangePasswordError(null);
+                    }}
+                    placeholder="Enter new password again"
+                    className="w-full text-xs font-semibold p-2.5 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
-                      <Lock className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Password</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        required
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        className="w-full text-xs font-semibold p-3 pr-10 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-                        placeholder="••••••"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 hover:text-stone-605 focus:outline-hidden"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
+                <button
+                  type="submit"
+                  disabled={changePasswordLoading}
+                  className="w-full mt-2 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {changePasswordLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Password Tabdeel Karen</span>
+                    </>
+                  )}
+                </button>
+              </form>
 
-                  <button
-                    type="submit"
-                    disabled={authLoading}
-                    className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {authLoading ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 text-blue-200" />
-                        <span>Sign In (Sync On Karen)</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleEmailSignUp} className="space-y-4">
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
-                      <UserIcon className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Aapka Poora Name (Zaati Naam)</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={authDisplayName}
-                      onChange={(e) => setAuthDisplayName(e.target.value)}
-                      className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-                      placeholder="e.g. Muhammad Shahid"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Pasandeda Username ya Email</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full text-xs font-semibold p-3 border border-stone-200 dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-                      placeholder="e.g. shahid ya shahid@ledger.pk"
-                    />
-                    <span className="text-[10px] text-stone-400 dark:text-stone-500 block mt-1">Aap apna simple naya naam bhi likh sakte hain.</span>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-stone-605 dark:text-stone-300 mb-1.5 flex items-center gap-1.5">
-                      <Lock className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Naya Password (kam az kam 6 characters)</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        required
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        className="w-full text-xs font-semibold p-3 pr-10 border border-[#CBD5E1] dark:border-[#21283b] bg-white dark:bg-[#131622] text-stone-900 dark:text-white rounded-xl focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-                        placeholder="••••••"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute top-1/2 right-3 -translate-y-1/2 text-stone-400 hover:text-stone-605 focus:outline-hidden"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={authLoading}
-                    className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-98 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {authLoading ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-200" />
-                        <span>Sign Up / Register Karen</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-              )}
+              {/* Log Out Drawer */}
+              <div className="border-t border-stone-105 dark:border-[#21283b] pt-4 flex flex-col space-y-2">
+                <p className="text-[11px] text-stone-400 dark:text-stone-500 font-medium">Aap is browser browser session ko safe exit kar sakte hain:</p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (confirm("Kya aap Naya Ledger session se safe exit / logout karna chahte hain?")) {
+                      setIsUserSettingsOpen(false);
+                      await logout();
+                    }
+                  }}
+                  className="w-full py-2.5 bg-red-600 hover:bg-red-700 active:scale-98 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <X className="w-4 h-4 text-red-200" />
+                  <span>Logout (Exit Application)</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
