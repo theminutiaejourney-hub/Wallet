@@ -74,7 +74,7 @@ export default function App() {
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "accounts" | "transactions" | "ai" | "debts">("overview");
-  const [timeFilter, setTimeFilter] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
+  const [timeFilter, setTimeFilter] = useState<"all" | "daily" | "weekly" | "monthly" | "yearly">("all");
 
   // New features state
   const [visualPeriod, setVisualPeriod] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
@@ -798,6 +798,10 @@ export default function App() {
     let list = [...transactions];
     if (selectedAccountId) {
       list = list.filter(t => t.accountId === selectedAccountId || t.toAccountId === selectedAccountId);
+    }
+
+    if (timeFilter === "all") {
+      return list.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
     const now = new Date();
@@ -1822,7 +1826,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               </div>
 
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
-                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Income this Period ({timeFilter})</p>
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Income this Period ({timeFilter === "all" ? "All Time" : timeFilter})</p>
                 <p className="text-2xl font-bold font-display text-blue-600 dark:text-blue-400 tracking-tight">{renderBalance(totalIncome)}</p>
                 <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-2 font-semibold font-mono">
                   Active earnings
@@ -1830,7 +1834,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               </div>
 
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
-                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Total Expense ({timeFilter})</p>
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Total Expense ({timeFilter === "all" ? "All Time" : timeFilter})</p>
                 <p className="text-2xl font-bold font-display text-red-500 dark:text-red-400 tracking-tight">{renderBalance(totalExpense)}</p>
                 <div className="text-[10px] text-stone-500 dark:text-stone-400 mt-2 font-mono">
                   {totalIncome > 0 ? `${Math.round((totalExpense / totalIncome) * 100)}% of income used` : "No income recorded"}
@@ -1838,7 +1842,7 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               </div>
 
               <div className="bg-white dark:bg-[#151926] p-5 rounded-2xl border border-[#E5E7EB] dark:border-[#21283b] shadow-xs relative transition-all hover:border-stone-300 dark:hover:border-[#2e374f]">
-                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Period Savings</p>
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 mb-1 font-bold uppercase tracking-wider font-mono">Net Period Savings ({timeFilter === "all" ? "All Time" : timeFilter})</p>
                 <p className={`text-2xl font-bold font-display tracking-tight ${netSavings >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-yellow-600 dark:text-yellow-500"}`}>
                   {renderBalance(netSavings)}
                 </p>
@@ -1853,18 +1857,18 @@ Kuch real halal mutual funds (like Meezan Rozana Amdani Fund, Al-Meezan etc) or 
               <div className="flex items-center gap-2">
                 <span className="text-xs text-stone-500 dark:text-stone-450 font-medium font-display">Record Duration Filter:</span>
                 <div className="flex bg-stone-100 dark:bg-[#1a2030] p-1 rounded-lg">
-                  {["daily", "weekly", "monthly", "yearly"].map((f) => (
+                  {["all", "daily", "weekly", "monthly", "yearly"].map((f) => (
                     <button
                       id={`btn-filter-${f}`}
                       key={f}
                       onClick={() => setTimeFilter(f as any)}
-                      className={`px-3 py-1 text-xs capitalize font-semibold rounded-md transition-all ${
+                      className={`px-3 py-1 text-xs capitalize font-semibold rounded-md transition-all cursor-pointer ${
                         timeFilter === f 
-                          ? "bg-white text-stone-950 shadow-xs" 
-                          : "text-stone-500 hover:text-stone-900"
+                          ? "bg-white dark:bg-[#151926] text-stone-950 dark:text-white shadow-xs" 
+                          : "text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white"
                       }`}
                     >
-                      {f}
+                      {f === "all" ? "All Records" : f}
                     </button>
                   ))}
                 </div>
