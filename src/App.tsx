@@ -234,14 +234,27 @@ export default function App() {
   const [customPlanReply, setCustomPlanReply] = useState<string | null>(null);
 
   // ---- cloud & firebase sync helper functions ----
+  const cleanPayload = (obj: any): any => {
+    if (obj === null || typeof obj !== "object") return obj;
+    const cleaned: any = Array.isArray(obj) ? [] : {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        if (obj[key] !== undefined) {
+          cleaned[key] = cleanPayload(obj[key]);
+        }
+      }
+    }
+    return cleaned;
+  };
+
   const syncAccount = async (acc: Account) => {
     if (!auth.currentUser) return;
     try {
-      await setDoc(doc(db, "users", auth.currentUser.uid, "accounts", acc.id), {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "accounts", acc.id), cleanPayload({
         ...acc,
         userId: auth.currentUser.uid,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/accounts/${acc.id}`);
     }
@@ -259,11 +272,11 @@ export default function App() {
   const syncTransaction = async (tx: Transaction) => {
     if (!auth.currentUser) return;
     try {
-      await setDoc(doc(db, "users", auth.currentUser.uid, "transactions", tx.id), {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "transactions", tx.id), cleanPayload({
         ...tx,
         userId: auth.currentUser.uid,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/transactions/${tx.id}`);
     }
@@ -281,11 +294,11 @@ export default function App() {
   const syncDebt = async (d: Debt) => {
     if (!auth.currentUser) return;
     try {
-      await setDoc(doc(db, "users", auth.currentUser.uid, "debts", d.id), {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "debts", d.id), cleanPayload({
         ...d,
         userId: auth.currentUser.uid,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/debts/${d.id}`);
     }
@@ -303,11 +316,11 @@ export default function App() {
   const syncScheduledExpense = async (se: ScheduledExpense) => {
     if (!auth.currentUser) return;
     try {
-      await setDoc(doc(db, "users", auth.currentUser.uid, "scheduledExpenses", se.id), {
+      await setDoc(doc(db, "users", auth.currentUser.uid, "scheduledExpenses", se.id), cleanPayload({
         ...se,
         userId: auth.currentUser.uid,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}/scheduledExpenses/${se.id}`);
     }
@@ -325,14 +338,14 @@ export default function App() {
   const syncPreferences = async (dark: boolean, hide: boolean) => {
     if (!auth.currentUser) return;
     try {
-      await setDoc(doc(db, "users", auth.currentUser.uid), {
+      await setDoc(doc(db, "users", auth.currentUser.uid), cleanPayload({
         uid: auth.currentUser.uid,
         email: auth.currentUser.email,
         displayName: auth.currentUser.displayName,
         darkMode: dark,
         hideBalances: hide,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${auth.currentUser.uid}`);
     }
@@ -600,60 +613,11 @@ export default function App() {
           setDebts(finalDebts);
           setScheduledExpenses(finalScheds);
 
-          // ---- Continuous Real-Time Snapshot Synchronizers ----
-          console.log("[Realtime] Binding active real-time Firebase snapshot listeners...");
-
-          const unsubAccounts = onSnapshot(collection(db, "users", uid, "accounts"), (snap) => {
-            if (isSyncingFromCloud.current) return;
-            const updated: Account[] = [];
-            snap.forEach(d => updated.push(d.data() as Account));
-            setAccounts(updated);
-          }, (err) => {
-            console.error("Accounts snapshot subscription failed:", err);
-          });
-          unsubscribeRefs.current.push(unsubAccounts);
-
-          const unsubTransactions = onSnapshot(collection(db, "users", uid, "transactions"), (snap) => {
-            if (isSyncingFromCloud.current) return;
-            const updated: Transaction[] = [];
-            snap.forEach(d => updated.push(d.data() as Transaction));
-            setTransactions(updated.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-          }, (err) => {
-            console.error("Transactions snapshot subscription failed:", err);
-          });
-          unsubscribeRefs.current.push(unsubTransactions);
-
-          const unsubDebts = onSnapshot(collection(db, "users", uid, "debts"), (snap) => {
-            if (isSyncingFromCloud.current) return;
-            const updated: Debt[] = [];
-            snap.forEach(d => updated.push(d.data() as Debt));
-            setDebts(updated);
-          }, (err) => {
-            console.error("Debts snapshot subscription failed:", err);
-          });
-          unsubscribeRefs.current.push(unsubDebts);
-
-          const unsubScheduled = onSnapshot(collection(db, "users", uid, "scheduledExpenses"), (snap) => {
-            if (isSyncingFromCloud.current) return;
-            const updated: ScheduledExpense[] = [];
-            snap.forEach(d => updated.push(d.data() as ScheduledExpense));
-            setScheduledExpenses(updated);
-          }, (err) => {
-            console.error("ScheduledExpenses snapshot subscription failed:", err);
-          });
-          unsubscribeRefs.current.push(unsubScheduled);
-
-          const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
-            if (isSyncingFromCloud.current) return;
-            if (snap.exists()) {
-              const data = snap.data();
-              if (data.darkMode !== undefined) setDarkMode(data.darkMode);
-              if (data.hideBalances !== undefined) setHideBalances(data.hideBalances);
-            }
-          }, (err) => {
-            console.error("User profile settings snapshot failed:", err);
-          });
-          unsubscribeRefs.current.push(unsubUser);
+          // ---- Continuous Real-Time Snapshot Synchronizers Deprecated ----
+          // To ensure transactions and ledger balances NEVER vanish or get auto-deleted
+          // by asynchronous background Firebase cache sync/rollback alerts, we now use
+          // reliable action-driven write/delete synchronization with local-first rendering.
+          console.log("[Setup] Session active. Data synchronized cleanly with secure cloud backups.");
 
         } catch (err) {
           console.error("Authentication load failure:", err);
